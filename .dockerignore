@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+**/coverage
+**/*.log
+.git
+.claude
+.ai-memory.toml
+.env*
+docs
+relatorios
+backups
+assets

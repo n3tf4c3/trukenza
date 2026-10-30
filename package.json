@@ -1,0 +1,14 @@
+{
+  "name": "trukenza",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.4.2",
+  "scripts": {
+    "web": "pnpm --filter ./apps/web dev",
+    "web:build": "pnpm --filter ./apps/web build",
+    "web:preview": "pnpm --filter ./apps/web preview",
+    "server": "pnpm --filter ./apps/server dev",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test"
+  }
+}

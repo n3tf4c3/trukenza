@@ -1,0 +1,1000 @@
+:root {
+  --fundo: #2b1a12;
+  --madeira: #6e3b1f;
+  --creme: #fff7e6;
+  --tinta: #2b1a12;
+  --ouro: #e8b04a;
+  --vermelho: #b8322b;
+  --verde: #3f9a4a;
+  font-family: 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+  color: var(--creme);
+  background: var(--fundo);
+  -webkit-tap-highlight-color: transparent;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at 50% 0%, #5a2a1d 0%, transparent 60%),
+    repeating-linear-gradient(90deg, #3a2316 0 46px, #33200f 46px 48px),
+    var(--fundo);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+  border: 2px solid var(--tinta);
+  border-radius: 10px;
+  padding: 0.5rem 0.9rem;
+  background: var(--creme);
+  color: var(--tinta);
+  font-weight: 600;
+  box-shadow: 0 3px 0 var(--tinta);
+  transition: transform 0.08s, box-shadow 0.08s;
+}
+
+button:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--tinta);
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+button[aria-pressed='true'] {
+  background: var(--ouro);
+}
+
+button.principal {
+  background: var(--vermelho);
+  color: var(--creme);
+}
+
+button.principal[aria-pressed='true'] {
+  background: var(--verde);
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 3px solid var(--ouro);
+  outline-offset: 2px;
+}
+
+input {
+  border: 2px solid var(--tinta);
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
+  background: #fffdf7;
+  color: var(--tinta);
+  min-width: 0;
+}
+
+code {
+  font-family: ui-monospace, Consolas, monospace;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+}
+
+.carregando {
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+/* Lobby */
+
+.lobby {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 1.2rem 1rem 3rem;
+}
+
+.lobby header {
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+.lobby h1 {
+  font-size: clamp(2.6rem, 9vw, 4.4rem);
+  margin: 0.2rem 0 0;
+  color: var(--ouro);
+  letter-spacing: 0.04em;
+  text-shadow: 0 4px 0 var(--tinta), 0 0 24px rgba(232, 176, 74, 0.35);
+}
+
+.lobby header p {
+  margin: 0.2rem 0 0;
+  opacity: 0.85;
+}
+
+.cartao {
+  background: var(--creme);
+  color: var(--tinta);
+  border: 3px solid var(--tinta);
+  border-radius: 18px;
+  padding: 1rem 1.1rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.35);
+}
+
+.cartao h2 {
+  font-size: 1.05rem;
+  margin: 0.8rem 0 0.5rem;
+}
+
+.cartao h2:first-child {
+  margin-top: 0;
+}
+
+.campo {
+  display: grid;
+  gap: 0.3rem;
+  font-weight: 700;
+}
+
+.colunas {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 0 1rem;
+}
+
+.personagens {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.6rem;
+}
+
+.personagens button {
+  display: grid;
+  justify-items: center;
+  gap: 0.2rem;
+  padding: 0.7rem 0.5rem;
+  background: #fffdf7;
+  text-align: center;
+}
+
+.personagens button.escolhido {
+  background: var(--ouro);
+  transform: translateY(-2px);
+}
+
+.personagens small {
+  font-weight: 400;
+  font-size: 0.8rem;
+}
+
+.grupo {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.linha {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.linha input {
+  flex: 1;
+  text-transform: uppercase;
+}
+
+.dica {
+  font-size: 0.85rem;
+  opacity: 0.8;
+  margin: 0.2rem 0 0.6rem;
+}
+
+.salas {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.salas li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border: 2px dashed rgba(43, 26, 18, 0.35);
+  border-radius: 10px;
+}
+
+.salas li small {
+  display: block;
+  opacity: 0.75;
+}
+
+.salas .vazia {
+  justify-content: center;
+  opacity: 0.75;
+}
+
+.convite {
+  text-align: center;
+}
+
+.status {
+  min-height: 1.4em;
+  text-align: center;
+  font-weight: 700;
+  color: var(--ouro);
+}
+
+/* Mesa */
+
+.cena {
+  position: fixed;
+  inset: 0;
+}
+
+/* A câmera livre usa o arrasto e a pinça: o navegador não rola nem amplia a página por cima da cena. */
+.cena canvas {
+  touch-action: none;
+}
+
+.hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: 'barra barra' '. jogadores' 'acoes acoes';
+  padding: max(0.5rem, env(safe-area-inset-top)) max(0.5rem, env(safe-area-inset-right)) max(0.5rem, env(safe-area-inset-bottom))
+    max(0.5rem, env(safe-area-inset-left));
+  gap: 0.5rem;
+}
+
+.hud > * {
+  pointer-events: auto;
+}
+
+.barra {
+  grid-area: barra;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  background: rgba(43, 26, 18, 0.78);
+  border-radius: 14px;
+  backdrop-filter: blur(4px);
+}
+
+.barra .marca {
+  font-weight: 800;
+  color: var(--ouro);
+  font-size: 1.15rem;
+}
+
+.barra .espaco {
+  flex: 1;
+}
+
+.barra button {
+  padding: 0.3rem 0.7rem;
+  font-size: 0.9rem;
+}
+
+.barra .som {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.barra .som input {
+  width: 5.5rem;
+  accent-color: var(--ouro);
+}
+
+.jogadores {
+  grid-area: jogadores;
+  align-self: start;
+  width: min(270px, 42vw);
+  background: rgba(255, 247, 230, 0.92);
+  color: var(--tinta);
+  border: 2px solid var(--tinta);
+  border-radius: 14px;
+  padding: 0.5rem 0.6rem;
+}
+
+.jogadores ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  /* Sem isto a coluna cresce até caber o texto inteiro e os selos saem do painel. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.35rem;
+}
+
+.jogadores li {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.jogadores li span {
+  flex: 1;
+  min-width: 0;
+}
+
+.jogadores strong,
+.jogadores small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jogadores small {
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+
+.jogadores li.caiu {
+  opacity: 0.55;
+}
+
+em {
+  font-style: normal;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: #9aa0a6;
+  color: #fff;
+}
+
+em.pronto {
+  background: var(--verde);
+}
+
+.acoes {
+  grid-area: acoes;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem 1rem;
+  padding: 0.5rem 0.7rem;
+  background: rgba(43, 26, 18, 0.78);
+  border-radius: 14px;
+  backdrop-filter: blur(4px);
+  /* A mão do jogador é desenhada por cima da cena, embaixo: as ações ficam numa faixa estreita. */
+  max-width: 920px;
+  justify-self: center;
+}
+
+.acoes .grupo {
+  margin: 0;
+}
+
+.acoes .dica {
+  margin: 0;
+  color: var(--creme);
+}
+
+.painel-personagem {
+  position: fixed;
+  left: 50%;
+  bottom: 6.5rem;
+  transform: translateX(-50%);
+  width: min(720px, calc(100vw - 1rem));
+  pointer-events: auto;
+}
+
+.faixa {
+  position: fixed;
+  top: 4rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--vermelho);
+  padding: 0.4rem 1rem;
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+.avisos {
+  position: fixed;
+  left: 0.7rem;
+  top: 4.2rem;
+  display: grid;
+  gap: 0.3rem;
+  pointer-events: none;
+}
+
+.avisos p {
+  margin: 0;
+  padding: 0.35rem 0.7rem;
+  background: rgba(255, 247, 230, 0.95);
+  color: var(--tinta);
+  border-radius: 10px;
+  border: 2px solid var(--tinta);
+  font-size: 0.9rem;
+  max-width: 70vw;
+  animation: aviso 0.25s ease-out;
+}
+
+@keyframes aviso {
+  from {
+    transform: translateX(-12px);
+    opacity: 0;
+  }
+}
+
+/* Etiquetas presas na cena 3D (drei Html). */
+
+.etiqueta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.6rem 0.25rem 0.25rem;
+  background: rgba(255, 247, 230, 0.94);
+  color: var(--tinta);
+  border: 2px solid var(--tinta);
+  border-radius: 999px;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+  font-size: 15px;
+}
+
+.etiqueta strong,
+.etiqueta span {
+  display: block;
+  line-height: 1.15;
+}
+
+.etiqueta span {
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.etiqueta.caiu {
+  opacity: 0.6;
+}
+
+.retrato {
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid var(--tinta);
+  background: var(--creme);
+}
+
+.cadeira-livre {
+  display: grid;
+  gap: 0.1rem;
+  white-space: nowrap;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.7rem;
+  background: rgba(91, 209, 107, 0.95);
+}
+
+.cadeira-livre small {
+  font-weight: 400;
+  font-size: 0.75rem;
+}
+
+.cadeira-livre.so-ver {
+  background: rgba(255, 247, 230, 0.8);
+}
+
+@media (max-width: 640px) {
+  .hud {
+    grid-template-columns: 1fr;
+    grid-template-areas: 'barra' 'jogadores' 'acoes';
+  }
+
+  .jogadores {
+    width: auto;
+    justify-self: end;
+    max-width: 60vw;
+    font-size: 0.85rem;
+  }
+
+  .barra .codigo {
+    font-size: 0.85rem;
+  }
+
+  /* No celular o volume fica com o do aparelho. */
+  .barra .som input {
+    display: none;
+  }
+}
+
+.cadeira-livre[hidden] {
+  display: none;
+}
+
+.jogadores summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.95rem;
+  list-style-position: inside;
+}
+
+.jogadores[open] summary {
+  margin-bottom: 0.4rem;
+}
+
+/* Tela larga: as ações viram uma coluna no canto de baixo, à direita, e o centro de baixo fica para a mão. */
+@media (min-width: 900px) {
+  .hud {
+    grid-template-areas: 'barra barra' '. jogadores' '. acoes';
+  }
+
+  .acoes {
+    justify-self: end;
+    align-self: end;
+    flex-direction: column;
+    align-items: stretch;
+    width: 300px;
+    max-width: 300px;
+  }
+
+  .acoes .linha {
+    justify-content: center;
+  }
+
+  .acoes .grupo {
+    justify-content: center;
+  }
+
+  .painel-personagem {
+    bottom: auto;
+    top: 50%;
+    transform: translate(-50%, -50%);
+  }
+}
+
+em.computador {
+  background: #5b6ee1;
+}
+
+.jogadores button.tirar {
+  padding: 0.1rem 0.45rem;
+  font-size: 0.75rem;
+  box-shadow: 0 2px 0 var(--tinta);
+}
+
+/* Etiquetas da cena 3D (drei Html com portal): cobre a tela como o canvas, entre ele e o painel. */
+.camada-html {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.camada-html button {
+  pointer-events: auto;
+}
+
+/* Partida: placar, vez, ações, histórico, gritos e fim. */
+
+.placar {
+  position: fixed;
+  top: 4.1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: stretch;
+  gap: 0.4rem;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.placar .lado {
+  display: grid;
+  justify-items: center;
+  min-width: 6.5rem;
+  padding: 0.25rem 0.7rem;
+  background: rgba(43, 26, 18, 0.85);
+  border: 2px solid;
+  border-radius: 12px;
+  backdrop-filter: blur(4px);
+}
+
+.placar .lado.meu {
+  box-shadow: 0 0 0 2px rgba(255, 247, 230, 0.6);
+}
+
+.placar .nome {
+  font-size: 0.8rem;
+  font-weight: 700;
+  max-width: 9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.placar strong {
+  font-size: 1.7rem;
+  line-height: 1.05;
+}
+
+.placar small {
+  font-size: 0.7rem;
+  opacity: 0.8;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.placar .meta {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  padding: 0.25rem 0.6rem;
+  background: rgba(43, 26, 18, 0.7);
+  border-radius: 12px;
+}
+
+.vez {
+  display: grid;
+  gap: 0.3rem;
+  width: 100%;
+  text-align: center;
+  font-weight: 700;
+}
+
+.vez.minha {
+  color: var(--ouro);
+}
+
+.relogio {
+  display: block;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 247, 230, 0.2);
+  overflow: hidden;
+}
+
+.relogio span {
+  display: block;
+  height: 100%;
+  background: var(--ouro);
+  transition: width 0.25s linear;
+}
+
+.jogadas {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+.jogadas button.canto {
+  background: var(--ouro);
+}
+
+.jogadas.respondendo {
+  animation: chamar 0.9s ease-in-out infinite alternate;
+  border-radius: 12px;
+}
+
+.jogadas button.resposta {
+  background: var(--verde);
+  color: var(--creme);
+  font-size: 1.05rem;
+}
+
+.jogadas button.resposta:nth-of-type(2) {
+  background: var(--vermelho);
+}
+
+.jogadas button.contestar {
+  background: var(--vermelho);
+  color: var(--creme);
+}
+
+.jogadas button.baralho {
+  background: #d9cbb4;
+}
+
+.jogadas button.baralho.confirmar {
+  background: var(--vermelho);
+  color: var(--creme);
+}
+
+@keyframes chamar {
+  from {
+    box-shadow: 0 0 0 0 rgba(232, 176, 74, 0);
+  }
+  to {
+    box-shadow: 0 0 0 4px rgba(232, 176, 74, 0.55);
+  }
+}
+
+button.discreto {
+  background: transparent;
+  color: var(--creme);
+  border-color: rgba(255, 247, 230, 0.35);
+  box-shadow: none;
+  font-size: 0.8rem;
+  padding: 0.25rem 0.6rem;
+}
+
+.regras {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.regras .grupo {
+  margin: 0;
+}
+
+.regras-mesa {
+  justify-content: center;
+}
+
+.regras-mesa .regras button {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+.jogadores li {
+  border-left: 4px solid transparent;
+  padding-left: 0.3rem;
+  border-radius: 4px;
+}
+
+.jogadores li.na-vez {
+  background: rgba(232, 176, 74, 0.25);
+}
+
+.historico {
+  margin-top: 0.5rem;
+  border-top: 1px dashed rgba(43, 26, 18, 0.3);
+  padding-top: 0.4rem;
+}
+
+.historico summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.historico ol {
+  list-style: none;
+  margin: 0.3rem 0 0;
+  padding: 0;
+  max-height: 32vh;
+  overflow: auto;
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.78rem;
+}
+
+.historico li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.35rem;
+  border: 0;
+  padding: 0;
+}
+
+.historico .cor {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+}
+
+.etiqueta.na-vez {
+  border-color: var(--ouro);
+  box-shadow: 0 0 0 3px rgba(232, 176, 74, 0.7);
+}
+
+.gritos {
+  position: fixed;
+  top: 26%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  justify-items: center;
+  gap: 0.3rem;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.grito {
+  display: grid;
+  justify-items: center;
+  animation: grito 0.6s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+  text-shadow: 0 4px 0 var(--tinta), 0 0 22px rgba(0, 0, 0, 0.55);
+}
+
+.grito strong {
+  font-size: clamp(2.4rem, 9vw, 5rem);
+  letter-spacing: 0.04em;
+  -webkit-text-stroke: 2px var(--tinta);
+}
+
+.grito span {
+  color: var(--creme);
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.resposta-grito {
+  padding: 0.3rem 0.8rem;
+  border-radius: 999px;
+  background: rgba(255, 247, 230, 0.95);
+  color: var(--tinta);
+  border: 2px solid var(--tinta);
+  font-weight: 700;
+  animation: aviso 0.25s ease-out;
+}
+
+@keyframes grito {
+  from {
+    transform: scale(0.3) rotate(-8deg);
+    opacity: 0;
+  }
+}
+
+.fim-partida {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 8;
+  text-align: center;
+  min-width: min(420px, calc(100vw - 2rem));
+}
+
+.fim-partida h2 {
+  font-size: 2rem;
+  margin: 0.2rem 0;
+}
+
+.fim-partida .linha {
+  justify-content: center;
+}
+
+@media (max-width: 640px) {
+  .placar {
+    top: 5.6rem;
+    left: 0.5rem;
+    transform: none;
+  }
+
+  .placar .lado {
+    min-width: 5rem;
+    padding: 0.2rem 0.5rem;
+  }
+
+  .placar strong {
+    font-size: 1.35rem;
+  }
+
+  .placar .meta {
+    display: none;
+  }
+}
+
+/* Cartas da vaza em 2D, no lado esquerdo (legíveis em qualquer câmera). */
+.na-mesa {
+  position: fixed;
+  left: 0.7rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.45rem 0.55rem;
+  background: rgba(43, 26, 18, 0.82);
+  border-radius: 14px;
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+  z-index: 4;
+}
+
+.na-mesa > small {
+  font-weight: 700;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.85;
+}
+
+.na-mesa .cartas {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 0.35rem;
+}
+
+.na-mesa figure {
+  margin: 0;
+  display: grid;
+  justify-items: center;
+  gap: 0.15rem;
+}
+
+.na-mesa img {
+  width: 64px;
+  height: 96px;
+  border-radius: 6px;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.4);
+}
+
+.na-mesa figure.levando img {
+  outline: 3px solid #ffd166;
+  outline-offset: 1px;
+}
+
+.na-mesa figcaption {
+  font-size: 0.72rem;
+  font-weight: 700;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.na-mesa .mostradas {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.na-mesa .mostradas small {
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.na-mesa .mostradas div {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.na-mesa .mostradas img {
+  width: 44px;
+  height: 66px;
+}
+
+.na-mesa .vazas {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .na-mesa {
+    top: auto;
+    bottom: 50%;
+    transform: none;
+    padding: 0.3rem 0.4rem;
+  }
+
+  .na-mesa img {
+    width: 40px;
+    height: 60px;
+  }
+}

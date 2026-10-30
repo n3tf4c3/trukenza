@@ -1,0 +1,74 @@
+# Trukenza em Docker: `docker compose up -d --build` (detalhes em docs/docker.md).
+# Cliente em http://localhost:4180 (TRUKENZA_CLIENT_PORT muda), servidor em ws://localhost:2580.
+# As portas não batem com as do Riscote (4173 e 2567): os dois rodam lado a lado no PC e no Orange Pi.
+name: trukenza
+
+# Endurecimento comum: nenhum container roda como root, grava na imagem ou ganha privilégios.
+x-endurecido: &endurecido
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  restart: unless-stopped
+
+services:
+  server:
+    <<: *endurecido
+    build:
+      context: .
+      target: server
+    image: trukenza-server
+    init: true
+    environment:
+      # Com túnel da Cloudflare, use cf-connecting-ip; sem proxy na frente, deixe vazio.
+      TRUKENZA_IP_HEADER: ${TRUKENZA_IP_HEADER:-}
+      TRUKENZA_METRICS: ${TRUKENZA_METRICS:-1}
+      TRUKENZA_MAX_ROOMS: ${TRUKENZA_MAX_ROOMS:-50}
+    tmpfs: [/tmp:size=16m]
+    mem_limit: 256m
+    pids_limit: 64
+    ports:
+      # 127.0.0.1: só este computador. TRUKENZA_BIND=0.0.0.0 abre para a rede local (nunca no Orange Pi).
+      - ${TRUKENZA_BIND:-127.0.0.1}:2580:2580
+
+  client:
+    <<: *endurecido
+    build:
+      context: .
+      target: client
+    image: trukenza-client
+    # nginx sem root ouve na 8080 e guarda pid e cache em /tmp.
+    tmpfs: [/tmp:size=16m]
+    mem_limit: 64m
+    pids_limit: 32
+    ports:
+      - ${TRUKENZA_BIND:-127.0.0.1}:${TRUKENZA_CLIENT_PORT:-4180}:8080
+
+  # Túneis rápidos da Cloudflare (endereços temporários), só com `--profile tunel`.
+  tunel-servidor:
+    <<: *endurecido
+    image: cloudflare/cloudflared:2026.10.1
+    profiles: [tunel]
+    command: tunnel --no-autoupdate --url http://server:2580
+    mem_limit: 128m
+    depends_on: [server]
+
+  tunel-cliente:
+    <<: *endurecido
+    image: cloudflare/cloudflared:2026.10.1
+    profiles: [tunel]
+    command: tunnel --no-autoupdate --url http://client:8080
+    mem_limit: 128m
+    depends_on: [client]
+
+  # Túnel nomeado em trukenza.win (endereço fixo), só com `--profile dominio`.
+  # As rotas (trukenza.win → client:8080, play.trukenza.win → server:2580) ficam no painel
+  # da Cloudflare; aqui vai só o token, no `.env` local. Ver docs/docker.md.
+  tunel-dominio:
+    <<: *endurecido
+    image: cloudflare/cloudflared:2026.10.1
+    profiles: [dominio]
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    mem_limit: 128m
+    depends_on: [server, client]

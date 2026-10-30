@@ -1,0 +1,9 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Scripts de instalação só rodam se aprovados aqui, com o motivo.
+allowBuilds:
+  # Acelerador nativo opcional do msgpackr (dependência do @colyseus/core);
+  # sem ele o msgpackr usa a implementação em JS puro.
+  msgpackr-extract: false
