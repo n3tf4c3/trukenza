@@ -32,3 +32,13 @@ test('todos os personagens têm corpo e peças faciais articuladas no GLB entreg
     }
   }
 });
+
+test('o bolicho entrega cenário, cadeira e o copo que vai para a mão nos goles', () => {
+  const glb = readFileSync(new URL('../public/modelos/bolicho.glb', import.meta.url));
+  assert.equal(glb.readUInt32LE(8), glb.length, 'arquivo completo');
+  const doc = JSON.parse(glb.subarray(20, 20 + glb.readUInt32LE(12)).toString('utf8'));
+  const names = new Set(doc.nodes.map((n: { name: string }) => n.name));
+  for (const node of ['cenario', 'brilhos', 'cadeira', 'copo']) assert.ok(names.has(node), `nó ausente: ${node}`);
+  const materials = new Set(doc.materials.map((m: { name: string }) => m.name));
+  for (const m of ['cerveja', 'espuma', 'carne', 'pao']) assert.ok(materials.has(m), `material ausente: ${m}`);
+});

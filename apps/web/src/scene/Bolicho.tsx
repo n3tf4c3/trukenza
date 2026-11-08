@@ -17,11 +17,11 @@ import {
 
 /**
  * O bolicho gaúcho, modelado no Blender (`assets/blender/bolicho.py`) e exportado em
- * `public/modelos/bolicho.glb`: `cenario` (sala, balcão, mesa, decoração, com sombra assada nos
- * vértices), `brilhos` (lampiões, fogo, céu) e `cadeira`. As texturas entram aqui pelo nome do material.
+ * `public/modelos/bolicho.glb`: `cenario` (sala, balcão, mesa, petiscos, decoração, com sombra assada nos
+ * vértices), `brilhos` (lampiões, fogo, céu), `cadeira` e `copo`. As texturas entram aqui pelo nome do material.
  */
 
-export const BOLICHO_URL = '/modelos/bolicho.glb';
+export const BOLICHO_URL = '/modelos/bolicho.glb?v=mesa-viva-1';
 const DRACO = '/draco/';
 
 /** Onde estão as fontes de luz no modelo (mesmas medidas do script do Blender). */
@@ -87,10 +87,12 @@ export function useBolicho() {
     const cenario = gltf.nodes.cenario!;
     const brilhos = gltf.nodes.brilhos!;
     const cadeira = gltf.nodes.cadeira!;
+    const copo = gltf.nodes.copo!;
     dress(cenario, { cast: true, receive: true });
     dress(brilhos, { cast: false, receive: false });
     dress(cadeira, { cast: true, receive: true });
-    return { cenario, brilhos, cadeira };
+    dress(copo, { cast: true, receive: false });
+    return { cenario, brilhos, cadeira, copo };
   }, [gltf]);
 }
 
@@ -127,6 +129,12 @@ export function Bolicho() {
 export function useChairModel(): THREE.Object3D {
   const { cadeira } = useBolicho();
   return useMemo(() => cadeira.clone(), [cadeira]);
+}
+
+/** Um copo de cerveja (clone com geometria e materiais compartilhados), um por lugar da mesa e outro na mão. */
+export function useCupModel(): THREE.Object3D {
+  const { copo } = useBolicho();
+  return useMemo(() => copo.clone(), [copo]);
 }
 
 useGLTF.preload(BOLICHO_URL, DRACO);

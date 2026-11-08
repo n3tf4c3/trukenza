@@ -30,6 +30,19 @@ export function archivedCardPosition(seat: number, trick: number, viewAngle: num
   ];
 }
 
+/** Copo de cada jogador: na beira da mesa, um pouco à direita de quem senta (afastado do monte e das vazas). */
+export const CUP_SIDE = 0.3;
+export const CUP_RADIUS = 1.38;
+
+/** Onde fica o copo de quem senta no ângulo `angle` (coordenadas da cena). */
+export function cupPosition(angle: number): [number, number, number] {
+  return [
+    Math.sin(angle) * CUP_RADIUS + Math.cos(angle) * CUP_SIDE,
+    TABLE_HEIGHT,
+    Math.cos(angle) * CUP_RADIUS - Math.sin(angle) * CUP_SIDE,
+  ];
+}
+
 /** Ângulo da cadeira em volta da mesa (0 = +z). A câmera é que gira para ficar atrás da cadeira do jogador. */
 export function seatAngle(seat: number, count: number): number {
   return (seat * Math.PI * 2) / count;

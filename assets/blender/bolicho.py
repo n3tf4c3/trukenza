@@ -2,10 +2,11 @@
 
     blender -b --factory-startup -P assets/blender/bolicho.py [-- --previa caminho.png]
 
-Gera apps/web/public/modelos/bolicho.glb com três nós:
+Gera apps/web/public/modelos/bolicho.glb com quatro nós:
 - `cenario`: sala, balcão, prateleiras, mesa e decoração, numa malha só, com sombra de contato assada.
 - `brilhos`: o que emite luz (vidro dos lampiões, fogo, céu da porta e da janela), sem sombra assada.
 - `cadeira`: uma cadeira de palha na origem, assento olhando para -z; o jogo a repete em cada lugar.
+- `copo`: um copo de cerveja com o fundo na origem; o jogo põe um na frente de cada jogador sentado.
 
 Medidas do jogo (`apps/web/src/scene/layout.ts`): mesa na origem com tampo a 0,78 m e raio 1,5 m;
 cadeiras a 2,1 m do centro; quem espera de pé fica num arco a 3,6 m do lado da porta (x negativo),
@@ -59,6 +60,14 @@ M = {
     'brasa': mat('brasa', '#2a1a12', rough=1.0),
     'quadro': mat('quadro', '#7d9a5c', rough=0.9),
     'palha': mat('palha', '#d8b46a', rough=0.95),
+    # Mesa de truco com os amigos: cerveja gelada e churrasco.
+    'cerveja': mat('cerveja', '#d99a1e', rough=0.12),
+    'espuma': mat('espuma', '#fbf5e6', rough=0.9),
+    'carne': mat('carne', '#7a3a22', rough=0.6),
+    'carne_rosada': mat('carne_rosada', '#c96a5a', rough=0.65),
+    'pao': mat('pao', '#d8a35a', rough=0.85),
+    'farofa': mat('farofa', '#e2c27c', rough=1.0),
+    'louca': mat('louca', '#f1ebdc', rough=0.4),
 }
 GLOW = {
     'chama': mat('chama', '#ffb347', emit='#ff9a2e', strength=6.0),
@@ -398,6 +407,78 @@ for k in range(12):
 add(box('relogio_minuto', (CX, CY + 0.085, CZ + 0.057), (0.012, 0.17, 0.006), M['ferro']))
 add(box('relogio_hora', (CX - 0.06, CY, CZ + 0.063), (0.12, 0.017, 0.006), M['ferro']))
 
+# ---------------------------------------------------------------- petiscos e cerveja na mesa
+# Ângulos a partir de +z (como `polar` em layout.ts), a 65° de cada cadeira: longe do monte de quem
+# distribui (cadeira + 41°), dos copos (cadeira + 13°, no jogo) e dos montinhos de vazas, que não passam
+# de 1,34 m do centro na direção das cadeiras. Sorteio próprio: não mexe no resto do cenário.
+rng = random.Random(1808)
+
+
+def on_table(deg, r):
+    a = math.radians(deg)
+    return math.sin(a) * r, math.cos(a) * r, a
+
+
+def off(x, z, a, t, rad):
+    """Desloca t ao longo da borda e rad para fora, a partir de (x, z)."""
+    return x + math.cos(a) * t + math.sin(a) * rad, z - math.sin(a) * t + math.cos(a) * rad
+
+
+def beer_bottle(x, z):
+    y = TABLE_TOP
+    prof = [(0.036, 0), (0.04, 0.02), (0.04, 0.17), (0.02, 0.23), (0.014, 0.26), (0.014, 0.3), (0.017, 0.305)]
+    add(lathe('garrafa_cerveja', (x, y, z), prof, M['vidro_ambar'], verts=16))
+    add(cyl('garrafa_rotulo', (x, y + 0.09, z), 0.0415, 0.07, M['rotulo'], verts=16))
+    add(cyl('garrafa_tampa', (x, y + 0.31, z), 0.018, 0.012, M['latao'], verts=12))
+
+
+# Tábua de churrasco: picanha fatiada e linguiça.
+x, z, a = on_table(65, 1.26)
+add(box('tabua', (x, TABLE_TOP + 0.014, z), (0.36, 0.028, 0.22), M['madeira'], rot_y=a, bevel=0.01))
+hx, hz = off(x, z, a, 0.215, 0)
+add(box('tabua_cabo', (hx, TABLE_TOP + 0.014, hz), (0.08, 0.022, 0.05), M['madeira'], rot_y=a, bevel=0.008))
+for k in range(5):
+    sx, sz = off(x, z, a, -0.13 + k * 0.045, -0.04)
+    add(box('picanha', (sx, TABLE_TOP + 0.045, sz), (0.032, 0.035, 0.1), M['carne'], rot_y=a + rng.uniform(-0.15, 0.15),
+            bevel=0.008, tint=tint(1, 0.1)))
+    add(box('picanha_miolo', (sx + math.cos(a) * 0.0165, TABLE_TOP + 0.045, sz - math.sin(a) * 0.0165), (0.002, 0.026, 0.085),
+            M['carne_rosada'], rot_y=a))
+for k in range(3):
+    sx, sz = off(x, z, a, -0.1 + k * 0.08, 0.06)
+    add(sphere('linguica_assada', (sx, TABLE_TOP + 0.05, sz), (0.035, 0.022, 0.022), M['linguica'], segments=10, rings=8,
+               tint=tint(0.85, 0.1)))
+
+# Cerveja e pão.
+x, z, a = on_table(155, 1.3)
+beer_bottle(*off(x, z, a, -0.09, 0))
+px, pz = off(x, z, a, 0.1, -0.02)
+add(lathe('prato_pao', (px, TABLE_TOP, pz), [(0.05, 0), (0.09, 0.008), (0.1, 0.02), (0.095, 0.022)], M['louca'], verts=24))
+for k in range(4):
+    ang = k * math.pi / 2 + 0.4
+    add(sphere('pao', (px + math.cos(ang) * 0.04, TABLE_TOP + 0.035, pz + math.sin(ang) * 0.04), (0.032, 0.025, 0.028), M['pao'],
+               segments=10, rings=8, tint=tint(1, 0.08)))
+
+# Farofa e mais linguiça.
+x, z, a = on_table(245, 1.27)
+add(lathe('cumbuca', (x, TABLE_TOP, z), [(0.04, 0), (0.07, 0.03), (0.08, 0.06), (0.077, 0.062)], M['louca'], verts=24))
+add(cyl('farofa', (x, TABLE_TOP + 0.05, z), 0.073, 0.02, M['farofa'], verts=24, radius2=0.06))
+for k in range(3):
+    sx, sz = off(x, z, a, 0.13 + k * 0.035, rng.uniform(-0.03, 0.03))
+    add(sphere('linguica_assada', (sx, TABLE_TOP + 0.022, sz), (0.022, 0.022, 0.05), M['linguica'], segments=10, rings=8,
+               tint=tint(0.85, 0.1)))
+
+# Mais uma garrafa, já pela metade da rodada.
+x, z, a = on_table(335, 1.3)
+beer_bottle(x, z)
+
+# ---------------------------------------------------------------- copo de cerveja (separado)
+# Na origem, com o fundo em y = 0; o jogo põe um na frente de cada jogador e o leva à boca nos goles.
+cup = [
+    lathe('copo_fundo', (0, 0, 0), [(0.036, 0), (0.038, 0.012)], M['vidro_claro'], verts=20),
+    lathe('copo_cerveja', (0, 0.012, 0), [(0.038, 0), (0.046, 0.11), (0.0465, 0.112)], M['cerveja'], verts=20),
+    lathe('copo_espuma', (0, 0.12, 0), [(0.046, 0), (0.048, 0.022), (0.03, 0.034), (0.008, 0.038)], M['espuma'], verts=20),
+]
+
 # ---------------------------------------------------------------- lampiões
 LY = 2.35  # base do lampião sobre a mesa (o jogo põe a luz em LAMP_Y)
 
@@ -447,13 +528,14 @@ bake_ao(cenario)
 brilhos = join('brilhos', glow_parts)
 box_uv(brilhos)  # o céu ganha o degradê pela altura, em metros
 cadeira = join('cadeira', chair)
+copo = join('copo', cup)
 box_uv(cadeira, scale=2.0)
-for o in (brilhos, cadeira):
+for o in (brilhos, cadeira, copo):
     o.data.color_attributes.active_color = o.data.color_attributes['Col']
 
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
-export(OUT, [cenario, brilhos, cadeira])
-tris = sum(len(p.vertices) - 2 for o in (cenario, brilhos, cadeira) for p in o.data.polygons)
+export(OUT, [cenario, brilhos, cadeira, copo])
+tris = sum(len(p.vertices) - 2 for o in (cenario, brilhos, cadeira, copo) for p in o.data.polygons)
 print(f'BOLICHO: {OUT} ({os.path.getsize(OUT) / 1e6:.2f} MB, {tris} triângulos)')
 
 # Prévia opcional, para conferir sem abrir o jogo.

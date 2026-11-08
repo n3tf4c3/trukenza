@@ -63,6 +63,7 @@ import {
 import { processMetrics } from './metrics.ts';
 import { PlayerSchema, SeatSchema, TableState } from './state.ts';
 import { SignalMemory } from './signalMemory.ts';
+import { botDelay, botThinkScale } from './botPacing.ts';
 
 function randomCode(): string {
   let code = '';
@@ -413,8 +414,8 @@ export class MesaRoom extends Room<{ state: TableState }> {
       const reviewers = m.actors();
       const botSeat = reviewers.find((s) => this.seatController(s).bot && botContests(m, s));
       if (botSeat !== undefined) {
-        const [lo, hi] = this.botDelayMs;
-        this.decisionTimer = this.clock.setTimeout(() => this.autoAct(botSeat, version), lo + Math.floor(this.botRandom() * (hi - lo + 1)));
+        // Conferir a Flor escondida também pede um olhar demorado nas cartas mostradas.
+        this.decisionTimer = this.clock.setTimeout(() => this.autoAct(botSeat, version), botDelay(this.botDelayMs, 1.6, this.botRandom));
         return;
       }
       const pause = reviewers.length > 0 ? this.reviewPauseMs : this.handPauseMs;
@@ -441,8 +442,7 @@ export class MesaRoom extends Room<{ state: TableState }> {
       delay = due.delay;
       this.setDeadline(turnMs, due.at);
     } else if (botSeat !== undefined) {
-      const [lo, hi] = this.botDelayMs;
-      delay = lo + Math.floor(this.botRandom() * (hi - lo + 1));
+      delay = botDelay(this.botDelayMs, botThinkScale(m.view(), botSeat), this.botRandom);
     } else {
       delay = this.droppedGraceMs;
     }

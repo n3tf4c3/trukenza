@@ -15,6 +15,7 @@ import { Chair, Deck } from './Furniture';
 import { TableCards, deckPose } from './TableCards';
 import { CHAIR_RADIUS, polar, seatAngle, standingSpot } from './layout';
 import { Exterior, OutdoorLights, SKY_COLORS } from './Exteriores';
+import { teamOfSeat } from '../game';
 
 /** Fogo do fogão campeiro: luz laranja que tremula (sem sombra). */
 function FireLight() {
@@ -116,6 +117,9 @@ function Mesa({ post }: { post: boolean }) {
   const waiting = table.phase === PHASE_WAITING;
   const standing = table.players.filter((p) => p.seat < 0);
   const focusSeat = speaking?.seat ?? shouts.at(-1)?.seat ?? actors.values().next().value;
+  // Canto adversário em aberto: quem responde olha antes para o parceiro (em duplas).
+  const challenge = game?.hand && !game.hand.ended ? shouts.filter((s) => s.big).at(-1) : undefined;
+  const partnerOf = (seat: number) => (table.seatCount === 4 ? polar(seatAngle((seat + 2) % 4, 4), CHAIR_RADIUS) : null);
   const focusPosition = focusSeat !== undefined && focusSeat >= 0 ? polar(seatAngle(focusSeat, table.seatCount), CHAIR_RADIUS) : null;
 
   const seatPose = (seat: number): Pose => {
@@ -173,6 +177,8 @@ function Mesa({ post }: { post: boolean }) {
             playing={!waiting}
             focus={seated && p.seat !== focusSeat ? focusPosition : null}
             speakingAt={seated && speaking?.seat === p.seat ? speaking.at : null}
+            partner={seated ? partnerOf(p.seat) : null}
+            challengeAt={seated && challenge && actors.has(p.seat) && teamOfSeat(challenge.seat) !== teamOfSeat(p.seat) ? challenge.at : null}
             signal={seated && signals[p.seat]?.hand === handKey && !game?.hand?.ended ? signals[p.seat] : undefined}
           />
         );

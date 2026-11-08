@@ -1,18 +1,19 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { CHARACTERS, SIGNAL_DURATION_MS, type CharacterId, type SignalId } from '@trukenza/shared';
 import type { Card } from '@trukenza/game-engine';
 import { Portrait } from '../ui/Portrait';
-import { CHAIR_RADIUS, DOOR, SEAT_HEIGHT, polar } from './layout';
+import { CHAIR_RADIUS, CUP_RADIUS, CUP_SIDE, DOOR, SEAT_HEIGHT, TABLE_HEIGHT, polar } from './layout';
+import { useCupModel } from './Bolicho';
 import { HeldCards } from './Cards';
 import { localAvatar } from './avatar';
 import { htmlLayer } from './htmlLayer';
 import { HEAD_RADIUS, HIP_X, SHOULDER_X, useCharacterParts } from './personagens';
 import type { Gesture } from '../store';
 import { signalPose, smooth } from '../performance';
-import { characterGesture } from '../acting';
+import { GOLE_HELD, IDLE_DURATION, characterGesture, idlePose, pickIdle, thinkingPose, type IdleKind } from '../acting';
 
 /**
  * Um personagem na mesa. As peças (tronco, cabeça, olhos, braços, coxas e canelas) vêm do modelo do
@@ -53,6 +54,10 @@ interface CharacterProps {
   focus: [number, number, number] | null;
   speakingAt: number | null;
   signal: { signal: SignalId; at: number } | undefined;
+  /** Cadeira do parceiro (só em duplas): quem vai responder a um canto olha para ele antes. */
+  partner: [number, number, number] | null;
+  /** Instante (performance.now) do canto adversário que esta cadeira precisa responder. */
+  challengeAt: number | null;
 }
 
 const WALK_SPEED = 3.4;
@@ -61,6 +66,11 @@ const SIT_SPEED = 1.7;
 const AROUND = CHAIR_RADIUS + 0.65;
 /** Segmentos que passam mais perto do centro que isto cruzariam a mesa ou as cadeiras. */
 const BLOCK = CHAIR_RADIUS + 0.35;
+/** Copo na beira da mesa, à direita de quem senta (local da cadeira; a mesa fica em -z). */
+const CUP_REST = new THREE.Vector3(CUP_SIDE, TABLE_HEIGHT, -(CHAIR_RADIUS - CUP_RADIUS));
+/** Intervalo entre ações ociosas de um mesmo personagem, em segundos. */
+const IDLE_GAP: readonly [number, number] = [7, 19];
+const scratch = new THREE.Vector3();
 
 /**
  * Caminho até o destino, calculado uma vez por destino. Entre dois pontos fora do anel com o trecho
@@ -103,7 +113,13 @@ export function Character(props: CharacterProps) {
   const nose = useRef<THREE.Group>(null);
   const opening = useRef<THREE.Group>(null);
   const cards = useRef<THREE.Group>(null);
-  const acting = useRef(characterGesture(character, undefined, 0));
+  const acting = useRef({ ...characterGesture(character, undefined, 0), think: 0 });
+  const tableCup = useRef<THREE.Group>(null);
+  const handCup = useRef<THREE.Group>(null);
+  const handCupBottom = useRef<THREE.Group>(null);
+  const cupOnTable = useCupModel();
+  const cupInHand = useCupModel();
+  const cupRest = useMemo(() => CUP_REST.clone(), []);
   const anim = useRef({
     pos: new THREE.Vector3(...(startAtTarget ? target.position : DOOR)),
     rot: startAtTarget ? target.rotationY : Math.PI / 2,
@@ -116,6 +132,9 @@ export function Character(props: CharacterProps) {
     speed: 0,
     gaze: 0,
     seed: Math.random() * 100,
+    idle: null as { kind: IdleKind; at: number } | null,
+    nextIdle: 3 + Math.random() * 8,
+    activeSince: 0,
   });
 
   useFrame(({ clock }, rawDt) => {
@@ -176,12 +195,31 @@ export function Character(props: CharacterProps) {
     const now = performance.now();
     const cue = props.gesture && now < props.gesture.at ? props.gesture.previous : props.gesture;
     const age = cue ? (now - cue.at) / 1000 : 99;
-    const desiredGesture = characterGesture(character, cue?.kind, age);
+    const desiredGesture = { ...characterGesture(character, cue?.kind, age), think: 0 };
+    const gesturing = !!cue && age > -0.2 && age < 1.6;
+    const clockNow = clock.elapsedTime;
+    const hasCards = typeof props.hand === 'number' ? props.hand > 0 : props.hand.length > 0;
+    // Vida entre jogadas: sorteio local, só sentado, conectado, fora da vez e sem gesto em curso.
+    const calm = seatTarget && a.sit > 0.95 && a.walk < 0.05 && props.connected && !props.active && !gesturing &&
+      props.speakingAt === null && !props.signal;
+    if (a.idle && (clockNow - a.idle.at >= IDLE_DURATION[a.idle.kind] || gesturing || props.active || a.sit < 0.9)) a.idle = null;
+    if (!a.idle && clockNow >= a.nextIdle) {
+      if (calm) a.idle = { kind: pickIdle(character, hasCards, Math.random()), at: clockNow };
+      a.nextIdle = clockNow + (calm ? IDLE_GAP[0] + Math.random() * (IDLE_GAP[1] - IDLE_GAP[0]) : 2 + Math.random() * 2);
+    }
+    const idleAge = a.idle ? clockNow - a.idle.at : 0;
+    const idle = idlePose(a.idle?.kind, idleAge);
+    for (const key of Object.keys(idle) as (keyof typeof idle)[]) desiredGesture[key] += idle[key];
+    // Quem tem a vez pensa (depois de um instante, para não estalar em decisões rápidas).
+    if (props.active) a.activeSince ||= now;
+    else a.activeSince = 0;
+    desiredGesture.think = props.active && !gesturing && now - a.activeSince > 700 ? 1 : 0;
     const gesture = acting.current;
     // Um novo canto pode interromper uma reação: mistura as poses em vez de estalar os braços.
     for (const key of Object.keys(gesture) as (keyof typeof gesture)[]) {
-      gesture[key] = THREE.MathUtils.damp(gesture[key], desiredGesture[key], 18, dt);
+      gesture[key] = THREE.MathUtils.damp(gesture[key], desiredGesture[key], key === 'think' ? 5 : 18, dt);
     }
+    const thinking = thinkingPose(gesture.think, clock.elapsedTime + a.seed);
     const signalAge = props.signal ? (now - props.signal.at) / 1000 : 99;
     const signal = signalPose(props.signal?.signal, signalAge);
     const signaling = signalAge >= 0 && signalAge < SIGNAL_DURATION_MS / 1000;
@@ -211,12 +249,13 @@ export function Character(props: CharacterProps) {
         arm.rotation.z = THREE.MathUtils.lerp(side * 0.08, side * (hasCards ? 0.35 : 0.12), s);
         // A mão esquerda guarda as cartas; a direita faz o gesto. Na vitória, ambas comemoram.
         const weight = i === 1 ? settled : cue?.kind === 'vitoria' ? settled * 0.65 : 0;
-        arm.rotation.x += gesture.arm * weight;
-        arm.rotation.z += side * gesture.spread * weight;
+        // A esquerda só reacomoda o leque; a direita pensa, coça a cabeça e bebe.
+        arm.rotation.x += i === 1 ? (gesture.arm + thinking.arm) * weight : gesture.arm * weight + gesture.leftArm * settled;
+        arm.rotation.z += side * (gesture.spread + (i === 1 ? thinking.spread : 0)) * weight;
       }
     }
     if (torso.current) {
-      torso.current.rotation.x = -0.1 * s + gesture.lean * settled - (props.active ? 0.035 * settled : 0);
+      torso.current.rotation.x = -0.1 * s + (gesture.lean + thinking.lean) * settled - (props.active ? 0.035 * settled : 0);
       torso.current.rotation.y = gesture.twist * settled;
       torso.current.rotation.z = Math.sin(a.stride) * 0.025 * a.walk + gesture.sway * settled;
       if (character === 'sardinha') torso.current.rotation.z += signal.tilt * settled;
@@ -225,13 +264,14 @@ export function Character(props: CharacterProps) {
     if (head.current) {
       // Olha de leve em volta; desconectado, cochila; cantando, levanta o queixo.
       // Sardinha mantém a cabeça alinhada à blusa: seu olho baixo não abandona o peixe nos gritos.
-      const focus = props.focus;
+      const challengeAge = props.challengeAt !== null ? (now - props.challengeAt) / 1000 : -1;
+      const focus = props.partner && props.active && challengeAge > 0.25 && challengeAge < 1.5 ? props.partner : props.focus;
       const heading = focus ? Math.atan2(-(focus[0] - a.pos.x), -(focus[2] - a.pos.z)) - a.rot : Math.sin(t * 0.32) * 0.16;
       const desired = Math.max(-0.65, Math.min(0.65, Math.atan2(Math.sin(heading), Math.cos(heading))));
       a.gaze = THREE.MathUtils.damp(a.gaze, desired, 4, dt);
       head.current.rotation.y = character === 'sardinha' ? 0 : a.gaze * (props.connected ? 1 : 0.2) + gesture.shake * settled;
       head.current.rotation.x = character === 'sardinha' ? 0 : props.connected
-        ? Math.sin(t * 0.37) * 0.035 + 0.12 * s + gesture.nod * settled + (talking ? Math.sin(speechAge * 17) * 0.035 : 0)
+        ? Math.sin(t * 0.37) * 0.035 + 0.12 * s + (gesture.nod + thinking.nod) * settled + (talking ? Math.sin(speechAge * 17) * 0.035 : 0)
         : 0.5;
       head.current.rotation.z = character === 'sardinha' ? 0 : gesture.twist * 0.5 + signal.tilt * settled;
     }
@@ -249,6 +289,23 @@ export function Character(props: CharacterProps) {
     }
     if (opening.current) opening.current.visible = signal.opening > 0.25;
     if (cards.current) cards.current.visible = s > 0.9;
+    // O copo: na beira da mesa; no gole, desliza até a mão, passa para ela e volta ao mesmo lugar.
+    const held = a.idle?.kind === 'gole' && idleAge >= GOLE_HELD[0] && idleAge < GOLE_HELD[1] && s > 0.9;
+    const arm = arms[1]!.current;
+    if (handCup.current && arm && torso.current) {
+      handCup.current.visible = held;
+      // Fica de pé apesar do braço e do tronco; no gole, a boca do copo vai para o rosto.
+      handCup.current.rotation.set(-(arm.rotation.x + torso.current.rotation.x) + gesture.tilt, 0, -arm.rotation.z);
+    }
+    if (tableCup.current) {
+      tableCup.current.visible = seatTarget && s > 0.9 && !held;
+      tableCup.current.position.copy(cupRest);
+      if (gesture.cup > 0.001 && handCupBottom.current && root.current) {
+        handCupBottom.current.getWorldPosition(scratch);
+        root.current.worldToLocal(scratch);
+        tableCup.current.position.lerp(scratch, Math.min(1, gesture.cup));
+      }
+    }
   });
 
   // Saindo da mesa, a câmera deixa de seguir este boneco.
@@ -262,6 +319,9 @@ export function Character(props: CharacterProps) {
 
   return (
     <group ref={root}>
+      <group ref={tableCup} visible={false}>
+        <primitive object={cupOnTable} />
+      </group>
       <group ref={hips}>
         {/* Pernas: coxa e canela (com o sapato), com o joelho como segunda articulação. */}
         {[0, 1].map((i) => (
@@ -278,6 +338,14 @@ export function Character(props: CharacterProps) {
           {[0, 1].map((i) => (
             <group key={i} ref={arms[i]} position={[(i === 0 ? -1 : 1) * SHOULDER_X(character), 0.55, 0]}>
               <primitive object={parts.braco[i]!} />
+              {i === 1 && (
+                // Copo na mão direita: o centro do copo fica na palma.
+                <group ref={handCup} position={[0, -0.4, -0.05]} visible={false}>
+                  <group ref={handCupBottom} position-y={-0.075}>
+                    <primitive object={cupInHand} />
+                  </group>
+                </group>
+              )}
               {i === 0 && (
                 // Pivô na mão do modelo (personagens.py), acompanhando braço e gestos.
                 <group ref={cards} position={[0, -0.38, -0.045]} rotation={[-1.5, 0, -0.35]}>
