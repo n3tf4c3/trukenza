@@ -30,20 +30,20 @@ export const COUNTER_LAMP = new THREE.Vector3(-1.6, 1.25, -4.55);
 export const FIRE = new THREE.Vector3(0, 0.55, 5.3);
 
 const SURFACES: Record<string, { maps: () => SurfaceMaps; bump: number }> = {
-  piso: { maps: floorMaps, bump: 0.6 },
-  parede: { maps: whitewashMaps, bump: 0.8 },
-  tijolo: { maps: brickMaps, bump: 1.2 },
-  forro: { maps: ceilingMaps, bump: 0.5 },
-  madeira: { maps: woodMaps, bump: 0.35 },
-  madeira_escura: { maps: woodMaps, bump: 0.35 },
-  tampo: { maps: tableTopMaps, bump: 0.25 },
-  palha: { maps: strawMaps, bump: 1.5 },
-  saco: { maps: burlapMaps, bump: 0.8 },
-  poncho: { maps: burlapMaps, bump: 0.6 },
+  piso: { maps: floorMaps, bump: 0.018 },
+  parede: { maps: whitewashMaps, bump: 0.025 },
+  tijolo: { maps: brickMaps, bump: 0.035 },
+  forro: { maps: ceilingMaps, bump: 0.012 },
+  madeira: { maps: woodMaps, bump: 0.008 },
+  madeira_escura: { maps: woodMaps, bump: 0.008 },
+  tampo: { maps: tableTopMaps, bump: 0.006 },
+  palha: { maps: strawMaps, bump: 0.025 },
+  saco: { maps: burlapMaps, bump: 0.012 },
+  poncho: { maps: burlapMaps, bump: 0.008 },
 };
 
 /** Põe textura e relevo pelo nome do material, uma vez por material (os clones compartilham). */
-function dress(root: THREE.Object3D, shadows: { cast: boolean; receive: boolean }): void {
+export function dress(root: THREE.Object3D, shadows: { cast: boolean; receive: boolean }): void {
   root.traverse((o) => {
     const mesh = o as THREE.Mesh;
     if (!mesh.isMesh) return;
@@ -83,9 +83,10 @@ function dress(root: THREE.Object3D, shadows: { cast: boolean; receive: boolean 
 export function useBolicho() {
   const gltf = useGLTF(BOLICHO_URL, DRACO);
   return useMemo(() => {
-    const cenario = gltf.scene.getObjectByName('cenario')!;
-    const brilhos = gltf.scene.getObjectByName('brilhos')!;
-    const cadeira = gltf.scene.getObjectByName('cadeira')!;
+    // Os primitives passam a pertencer à cena R3F; o índice do GLTF continua estável ao remontar.
+    const cenario = gltf.nodes.cenario!;
+    const brilhos = gltf.nodes.brilhos!;
+    const cadeira = gltf.nodes.cadeira!;
     dress(cenario, { cast: true, receive: true });
     dress(brilhos, { cast: false, receive: false });
     dress(cadeira, { cast: true, receive: true });

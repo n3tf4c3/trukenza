@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { RANK_NAMES, SUIT_NAMES, parseCardId, trucoPower, type Team } from '@trukenza/game-engine';
+import { RANK_NAMES, SUIT_NAMES, parseCardId, type Team } from '@trukenza/game-engine';
 import { cardImage } from '../cardArt';
-import { endMatch, rematch, sendAction } from '../net';
+import { endMatch, rematch, sendAction, setRematchReady } from '../net';
 import { useStore, type TableView } from '../store';
-import { ACTION_LABELS, RESPONSES, TEAM_COLORS, TRUCO_LEVELS, scoreBand, teamName, teamOfSeat, type GameView } from '../game';
+import { ACTION_LABELS, RESPONSES, TEAM_COLORS, TRUCO_LEVELS, responseHint, scoreBand, teamName, teamOfSeat, trickStanding, type GameView } from '../game';
+import { ResumoMao } from './Experiencia';
 
 /**
  * Painéis da partida: placar, de quem é a vez (com o relógio), as ações possíveis, o histórico dos pontos e
@@ -67,7 +68,7 @@ export function Vez({ game, table, mySeat }: { game: GameView; table: TableView;
   } else if (h.ended) {
     text = h.ended.winnerTeam === null ? 'Fim da mão.' : `${teamName(h.ended.winnerTeam, game.seats, nameAt)} ganhou a mão. Recolhendo as cartas…`;
   } else if (h.decision === 'vez') {
-    text = h.turn === mySeat ? 'Sua vez: clique numa carta para jogar, ou cante.' : `Vez de ${nameAt(h.turn)}.`;
+    text = h.turn === mySeat ? 'Sua vez: selecione uma carta e confirme em Jogar, ou cante.' : `Vez de ${nameAt(h.turn)}.`;
   } else {
     const pending = h.decision === 'flor' ? h.flor.pending : h.decision === 'envido' ? h.envido.pending : h.truco.pending;
     const mine = h.actors.includes(mySeat);
@@ -95,6 +96,7 @@ const CONFIRM_MS = 3000;
 export function Jogadas() {
   const actions = useStore((s) => s.actions);
   const decision = useStore((s) => s.game?.hand?.decision);
+  const stakes = useStore((s) => s.game?.hand?.responseStakes);
   const [confirmFold, setConfirmFold] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
@@ -134,7 +136,8 @@ export function Jogadas() {
         }
         return (
           <button key={a} type="button" className={RESPONSES.has(a) ? 'resposta' : 'canto'} onClick={() => sendAction(a)}>
-            {ACTION_LABELS[a] ?? a}
+            <span>{ACTION_LABELS[a] ?? a}</span>
+            {responseHint(a, stakes) && <small>{responseHint(a, stakes)}</small>}
           </button>
         );
       })}
@@ -168,6 +171,11 @@ export function Historico({ game, table }: { game: GameView; table: TableView })
 
 export function FimDePartida({ game, table, isHost, myTeam }: { game: GameView; table: TableView; isHost: boolean; myTeam: Team | null }) {
   const nameAt = useNameAt(table);
+  const myId = useStore(s => s.me);
+  const reconnecting = useStore(s => s.reconnecting);
+  const me = table.players.find(p => p.id === myId);
+  const seated = table.players.filter(p => p.seat >= 0).sort((a, b) => a.seat - b.seat);
+  const ready = seated.length === table.seatCount && seated.every(p => p.ready && p.connected);
   if (game.winner === null) return null;
   const won = myTeam === game.winner;
   return (
@@ -176,17 +184,25 @@ export function FimDePartida({ game, table, isHost, myTeam }: { game: GameView; 
       <p>
         {teamName(0, game.seats, nameAt)} {game.score[0]} × {game.score[1]} {teamName(1, game.seats, nameAt)}
       </p>
+      <p className="dica">Revanche nesta mesa, com os mesmos personagens, cenário e regras.</p>
+      <ResumoMao game={game} table={table} />
+      <ul className="prontos-revanche" aria-label="Prontos para revanche">
+        {seated.map(p => <li key={p.id}><span>{p.name}</span><strong>{!p.connected ? 'Reconectando…' : p.ready ? 'Pronto ✓' : 'Aguardando'}</strong></li>)}
+      </ul>
+      {me && me.seat >= 0 && <button type="button" disabled={reconnecting} aria-pressed={me.ready} onClick={() => setRematchReady(!me.ready)}>
+        {me.ready ? 'Cancelar meu pronto' : 'Estou pronto para revanche'}
+      </button>}
       {isHost ? (
         <div className="linha">
-          <button type="button" className="principal" onClick={rematch}>
-            Jogar de novo
+          <button type="button" className="principal" disabled={!ready || reconnecting} onClick={rematch}>
+            Começar revanche
           </button>
           <button type="button" onClick={endMatch}>
             Voltar à espera
           </button>
         </div>
       ) : (
-        <p className="dica">O anfitrião escolhe se joga de novo.</p>
+        <p className="dica">Quando todos estiverem prontos, o anfitrião começa a revanche.</p>
       )}
     </div>
   );
@@ -209,7 +225,8 @@ export function NaMesa({ game, table, mySeat }: { game: GameView; table: TableVi
   const shown = h.review?.shown ?? [];
   if (trick.plays.length === 0 && shown.length === 0) return null;
   // Quem está levando a vaza agora (a carta mais forte até aqui), ou quem levou.
-  const lead = trick.winnerSeat ?? (trick.outcome === null ? leadingSeat(trick.plays) : null);
+  const standing = trickStanding(trick);
+  const lead = standing?.winnerSeat ?? null;
   const done = h.tricks.slice(0, index).filter((t) => t.outcome !== null);
   return (
     <section className="na-mesa" aria-label="Cartas na mesa">
@@ -219,6 +236,10 @@ export function NaMesa({ game, table, mySeat }: { game: GameView; table: TableVi
             {ORDINAL[index]} vaza
             {trick.outcome === 'parda' ? ' · parda' : ''}
           </small>
+          {standing && <span className="vaza-status">
+            {standing.outcome === 'parda' ? (trick.outcome === null ? 'Empatada por enquanto' : 'Vaza empatada')
+              : `${trick.outcome === null ? 'Levando' : 'Venceu'}: ${lead === mySeat ? 'você' : nameAt(lead!)}`}
+          </span>}
           <div className="cartas">
             {trick.plays.map((p) => {
               const card = parseCardId(p.card)!;
@@ -259,20 +280,6 @@ export function NaMesa({ game, table, mySeat }: { game: GameView; table: TableVi
       )}
     </section>
   );
-}
-
-/** A carta mais forte até aqui (a primeira jogada, entre as de mesma força). */
-function leadingSeat(plays: { seat: number; card: string }[]): number | null {
-  let best = -1;
-  let seat: number | null = null;
-  for (const p of plays) {
-    const power = trucoPower(parseCardId(p.card)!);
-    if (power > best) {
-      best = power;
-      seat = p.seat;
-    }
-  }
-  return seat;
 }
 
 /** Gritos da mesa: o último canto grande no meio da tela, as respostas menores embaixo dele. */

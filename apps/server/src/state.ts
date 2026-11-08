@@ -39,6 +39,8 @@ export const TableState = schema(
     goal: t.uint8(),
     flor: t.boolean(),
     turnSeconds: t.uint8(),
+    botDifficulty: t.string(),
+    scenery: t.string(),
     /** A partida em andamento: JSON da visão pública do motor (`MatchView` + relógio); vazio fora dela. */
     game: t.string(),
     players: t.map(PlayerSchema),

@@ -1,10 +1,26 @@
-import type { MatchView, Team } from '@trukenza/game-engine';
+import { parseCardId, resolveTrick, type MatchView, type ResponseStakes, type Team } from '@trukenza/game-engine';
+
+/** Reutiliza o motor também na vaza incompleta: empate entre duplas não tem líder. */
+export function trickStanding(trick: NonNullable<MatchView['hand']>['tricks'][number]) {
+  if (trick.outcome !== null) return { outcome: trick.outcome, winnerSeat: trick.winnerSeat };
+  if (trick.plays.length === 0) return null;
+  return resolveTrick(trick.plays.map(p => ({ seat: p.seat, card: parseCardId(p.card)! })));
+}
+
+export function responseHint(action: string, stakes: ResponseStakes | null | undefined): string | null {
+  if (!stakes) return null;
+  const tentos = (n: number) => `${n} ${n === 1 ? 'tento' : 'tentos'}`;
+  if (action === 'quero') return `${stakes.kind === 'truco' ? 'Mão' : 'Disputa'} vale ${tentos(stakes.accepted)}`;
+  if (action === 'nao-quero' || action === 'me-achico') return `Entrega ${tentos(stakes.refused)}`;
+  return null;
+}
 
 /**
  * A partida como chega do servidor (`state.game`): a visão pública do motor e o relógio de quem decide.
  * O cliente só mostra: quem pode o quê vem pronto do servidor (`MSG_HAND`).
  */
 export type GameView = MatchView & {
+  lastHandSummary?: import('@trukenza/game-engine').HandSummary | null;
   timer: { seconds: number; remainingMs: number | null };
   /** Quando este estado chegou (relógio local), para contar o tempo que resta. */
   receivedAt: number;

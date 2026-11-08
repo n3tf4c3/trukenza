@@ -8,3 +8,4 @@ export * from './flor.ts'; // Flor (SpanishFlor)
 export * from './scoring.ts'; // placar e histórico (SpanishScoring)
 export * from './match.ts'; // fases, turnos, Truco e a partida (SpanishMatchState, SpanishTrucoBet)
 export * from './bot.ts'; // o jogador do computador
+export * from './handSummary.ts';

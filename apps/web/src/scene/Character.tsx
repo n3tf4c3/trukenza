@@ -2,15 +2,17 @@ import { useEffect, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
-import { CHARACTERS, type CharacterId } from '@trukenza/shared';
+import { CHARACTERS, SIGNAL_DURATION_MS, type CharacterId, type SignalId } from '@trukenza/shared';
 import type { Card } from '@trukenza/game-engine';
 import { Portrait } from '../ui/Portrait';
 import { CHAIR_RADIUS, DOOR, SEAT_HEIGHT, polar } from './layout';
 import { HeldCards } from './Cards';
 import { localAvatar } from './avatar';
 import { htmlLayer } from './htmlLayer';
-import { HEAD_RADIUS, useCharacterParts } from './personagens';
+import { HEAD_RADIUS, HIP_X, SHOULDER_X, useCharacterParts } from './personagens';
 import type { Gesture } from '../store';
+import { signalPose, smooth } from '../performance';
+import { characterGesture } from '../acting';
 
 /**
  * Um personagem na mesa. As peças (tronco, cabeça, olhos, braços, coxas e canelas) vêm do modelo do
@@ -47,10 +49,14 @@ interface CharacterProps {
   gesture: Gesture | undefined;
   /** É a vez de quem está aqui (destaca a etiqueta). */
   active: boolean;
+  playing: boolean;
+  focus: [number, number, number] | null;
+  speakingAt: number | null;
+  signal: { signal: SignalId; at: number } | undefined;
 }
 
 const WALK_SPEED = 3.4;
-const SIT_SPEED = 3;
+const SIT_SPEED = 1.7;
 /** Raio de contorno: quem anda nunca atravessa a mesa nem as cadeiras. */
 const AROUND = CHAIR_RADIUS + 0.65;
 /** Segmentos que passam mais perto do centro que isto cruzariam a mesa ou as cadeiras. */
@@ -91,8 +97,13 @@ export function Character(props: CharacterProps) {
   const legs = [useRef<THREE.Group>(null), useRef<THREE.Group>(null)];
   const knees = [useRef<THREE.Group>(null), useRef<THREE.Group>(null)];
   const arms = [useRef<THREE.Group>(null), useRef<THREE.Group>(null)];
-  const blink = useRef<THREE.Group>(null);
+  const eyes = [useRef<THREE.Group>(null), useRef<THREE.Group>(null)];
+  const brows = useRef<THREE.Group>(null);
+  const mouth = useRef<THREE.Group>(null);
+  const nose = useRef<THREE.Group>(null);
+  const opening = useRef<THREE.Group>(null);
   const cards = useRef<THREE.Group>(null);
+  const acting = useRef(characterGesture(character, undefined, 0));
   const anim = useRef({
     pos: new THREE.Vector3(...(startAtTarget ? target.position : DOOR)),
     rot: startAtTarget ? target.rotationY : Math.PI / 2,
@@ -102,6 +113,8 @@ export function Character(props: CharacterProps) {
     planned: startAtTarget ? target.position.join() : '',
     walk: 0,
     stride: 0,
+    speed: 0,
+    gaze: 0,
     seed: Math.random() * 100,
   });
 
@@ -122,7 +135,10 @@ export function Character(props: CharacterProps) {
 
     let moving = false;
     if (far && a.sit <= 0.02) {
-      let budget = WALK_SPEED * dt;
+      const distanceToGoal = a.pos.distanceTo(new THREE.Vector3(...target.position));
+      a.speed = THREE.MathUtils.damp(a.speed, Math.min(WALK_SPEED, 0.6 + distanceToGoal * 2), 7, dt);
+      let budget = a.speed * dt;
+      let traveled = 0;
       let heading: THREE.Vector3 | null = null;
       while (budget > 0 && a.path.length > 0) {
         const step = a.path[0]!.clone().sub(a.pos);
@@ -130,21 +146,24 @@ export function Character(props: CharacterProps) {
         if (dist <= budget) {
           a.pos.copy(a.path.shift()!);
           budget -= dist;
+          traveled += dist;
         } else {
+          traveled += budget;
           a.pos.addScaledVector(step.normalize(), budget);
           budget = 0;
         }
         if (dist > 1e-4) heading = step;
       }
+      a.stride += traveled * 4.1;
       if (heading) {
         a.rot = angleLerp(a.rot, Math.atan2(-heading.x, -heading.z), Math.min(1, dt * 12));
         moving = true;
       }
     } else {
+      a.speed = THREE.MathUtils.damp(a.speed, 0, 10, dt);
       a.rot = angleLerp(a.rot, target.rotationY, Math.min(1, dt * 8));
     }
     a.walk = THREE.MathUtils.damp(a.walk, moving ? 1 : 0, 10, dt);
-    if (moving) a.stride += dt * 11;
     if (props.isMe) {
       // A câmera em terceira pessoa segue este boneco.
       localAvatar.ready = true;
@@ -153,14 +172,24 @@ export function Character(props: CharacterProps) {
       localAvatar.sit = a.sit;
     }
 
-    // Gesto: sobe rápido, segura e desce (1,6 s no total).
-    const age = props.gesture ? (performance.now() - props.gesture.at) / 1000 : 99;
-    const gesture = {
-      kind: props.gesture?.kind,
-      amount: age < 0.2 ? age / 0.2 : age < 1.1 ? 1 : Math.max(0, 1 - (age - 1.1) / 0.5),
-    };
+    // Gestos são poses aditivas, com antecipação e retorno; não deixam articulações presas.
+    const now = performance.now();
+    const cue = props.gesture && now < props.gesture.at ? props.gesture.previous : props.gesture;
+    const age = cue ? (now - cue.at) / 1000 : 99;
+    const desiredGesture = characterGesture(character, cue?.kind, age);
+    const gesture = acting.current;
+    // Um novo canto pode interromper uma reação: mistura as poses em vez de estalar os braços.
+    for (const key of Object.keys(gesture) as (keyof typeof gesture)[]) {
+      gesture[key] = THREE.MathUtils.damp(gesture[key], desiredGesture[key], 18, dt);
+    }
+    const signalAge = props.signal ? (now - props.signal.at) / 1000 : 99;
+    const signal = signalPose(props.signal?.signal, signalAge);
+    const signaling = signalAge >= 0 && signalAge < SIGNAL_DURATION_MS / 1000;
+    const talking = props.speakingAt !== null;
+    const speechAge = talking ? (performance.now() - props.speakingAt!) / 1000 : 0;
     const t = clock.elapsedTime + a.seed;
-    const s = a.sit;
+    const s = smooth(a.sit);
+    const settled = s * (1 - a.walk);
     const swing = Math.sin(a.stride) * 0.6 * a.walk;
     root.current?.position.copy(a.pos);
     if (root.current) root.current.rotation.y = a.rot;
@@ -176,30 +205,49 @@ export function Character(props: CharacterProps) {
       if (knee) knee.rotation.x = THREE.MathUtils.lerp(Math.max(0, -side * swing) * -0.8, -Math.PI / 2, s);
       if (arm) {
         // Sentado, os braços vão à frente segurando as cartas; andando, balançam.
-        arm.rotation.x = THREE.MathUtils.lerp(-side * swing * 0.8, 1.15 + Math.sin(t * 1.3 + i) * 0.03, s);
-        arm.rotation.z = THREE.MathUtils.lerp(side * 0.08, side * -0.35, s);
-        // Gestos: quem canta ergue um braço; quem ganha a mão comemora com os dois.
-        const raise = gesture.kind === 'canto' ? (i === 1 ? gesture.amount : 0) : gesture.kind === 'vitoria' ? gesture.amount : 0;
-        if (raise > 0) {
-          arm.rotation.x = THREE.MathUtils.lerp(arm.rotation.x, 2.75 + Math.sin(t * 14) * 0.08 * raise, raise);
-          arm.rotation.z = THREE.MathUtils.lerp(arm.rotation.z, side * -0.45, raise);
-        }
+        const hasCards = typeof props.hand === 'number' ? props.hand > 0 : props.hand.length > 0;
+        const armRest = hasCards ? (i === 0 ? 1.15 : 0.85) : 0.3;
+        arm.rotation.x = THREE.MathUtils.lerp(-side * swing * 0.8, armRest + Math.sin(t * 1.3 + i) * 0.025, s);
+        arm.rotation.z = THREE.MathUtils.lerp(side * 0.08, side * (hasCards ? 0.35 : 0.12), s);
+        // A mão esquerda guarda as cartas; a direita faz o gesto. Na vitória, ambas comemoram.
+        const weight = i === 1 ? settled : cue?.kind === 'vitoria' ? settled * 0.65 : 0;
+        arm.rotation.x += gesture.arm * weight;
+        arm.rotation.z += side * gesture.spread * weight;
       }
     }
     if (torso.current) {
-      torso.current.rotation.x = -0.1 * s;
-      torso.current.scale.y = 1 + Math.sin(t * 2.2) * 0.015;
+      torso.current.rotation.x = -0.1 * s + gesture.lean * settled - (props.active ? 0.035 * settled : 0);
+      torso.current.rotation.y = gesture.twist * settled;
+      torso.current.rotation.z = Math.sin(a.stride) * 0.025 * a.walk + gesture.sway * settled;
+      if (character === 'sardinha') torso.current.rotation.z += signal.tilt * settled;
+      torso.current.scale.y = 1 + Math.sin(t * 1.7) * 0.008;
     }
     if (head.current) {
       // Olha de leve em volta; desconectado, cochila; cantando, levanta o queixo.
-      head.current.rotation.y = Math.sin(t * 0.5) * 0.35 * (props.connected ? 1 : 0.2);
-      head.current.rotation.x = props.connected ? Math.sin(t * 0.37) * 0.08 + 0.12 * s - 0.25 * gesture.amount : 0.5;
+      // Sardinha mantém a cabeça alinhada à blusa: seu olho baixo não abandona o peixe nos gritos.
+      const focus = props.focus;
+      const heading = focus ? Math.atan2(-(focus[0] - a.pos.x), -(focus[2] - a.pos.z)) - a.rot : Math.sin(t * 0.32) * 0.16;
+      const desired = Math.max(-0.65, Math.min(0.65, Math.atan2(Math.sin(heading), Math.cos(heading))));
+      a.gaze = THREE.MathUtils.damp(a.gaze, desired, 4, dt);
+      head.current.rotation.y = character === 'sardinha' ? 0 : a.gaze * (props.connected ? 1 : 0.2) + gesture.shake * settled;
+      head.current.rotation.x = character === 'sardinha' ? 0 : props.connected
+        ? Math.sin(t * 0.37) * 0.035 + 0.12 * s + gesture.nod * settled + (talking ? Math.sin(speechAge * 17) * 0.035 : 0)
+        : 0.5;
+      head.current.rotation.z = character === 'sardinha' ? 0 : gesture.twist * 0.5 + signal.tilt * settled;
     }
-    if (hips.current && gesture.kind === 'vitoria') hips.current.position.y += Math.abs(Math.sin(t * 9)) * 0.03 * gesture.amount;
-    if (blink.current) {
-      const closed = !props.connected || t % 3.7 < 0.12;
-      blink.current.scale.y = THREE.MathUtils.damp(blink.current.scale.y, closed ? 0.1 : 1, 30, dt);
+    if (hips.current) hips.current.position.y += gesture.bounce * settled;
+    for (let i = 0; i < 2; i++) {
+      const eye = eyes[i]!.current;
+      const closed = !props.connected || (!signaling && t % 3.7 < 0.12);
+      if (eye) eye.scale.y = THREE.MathUtils.damp(eye.scale.y, closed ? 0.1 : i === 0 ? signal.leftEye : signal.rightEye, 30, dt);
     }
+    if (brows.current) brows.current.position.y = signaling ? signal.brow : gesture.brow * settled;
+    if (nose.current) nose.current.position.y = signal.nose;
+    if (mouth.current) {
+      mouth.current.position.set(signal.mouthX, (character === 'presuntinho' ? -0.15 : -0.1) + signal.mouthY, -HEAD_RADIUS[character] * 0.9 + signal.mouthZ);
+      mouth.current.scale.set(signaling ? signal.mouthWidth : 1 + gesture.smile * settled, signal.mouthHeight, 1);
+    }
+    if (opening.current) opening.current.visible = signal.opening > 0.25;
     if (cards.current) cards.current.visible = s > 0.9;
   });
 
@@ -217,7 +265,7 @@ export function Character(props: CharacterProps) {
       <group ref={hips}>
         {/* Pernas: coxa e canela (com o sapato), com o joelho como segunda articulação. */}
         {[0, 1].map((i) => (
-          <group key={i} ref={legs[i]} position={[i === 0 ? -0.11 : 0.11, 0, 0]}>
+          <group key={i} ref={legs[i]} position={[(i === 0 ? -1 : 1) * HIP_X(character), 0, 0]}>
             <primitive object={parts.coxa[i]!} />
             <group ref={knees[i]} position-y={-0.42}>
               <primitive object={parts.canela[i]!} />
@@ -228,22 +276,33 @@ export function Character(props: CharacterProps) {
           <primitive object={parts.tronco} />
           {/* Braços a partir dos ombros, com a mão na ponta. */}
           {[0, 1].map((i) => (
-            <group key={i} ref={arms[i]} position={[i === 0 ? -0.27 : 0.27, 0.55, 0]}>
+            <group key={i} ref={arms[i]} position={[(i === 0 ? -1 : 1) * SHOULDER_X(character), 0.55, 0]}>
               <primitive object={parts.braco[i]!} />
+              {i === 0 && (
+                // Pivô na mão do modelo (personagens.py), acompanhando braço e gestos.
+                <group ref={cards} position={[0, -0.38, -0.045]} rotation={[-1.5, 0, -0.35]}>
+                  <group position-y={0.08}>
+                    <HeldCards hand={props.hand} handKey={props.handKey} faceUp={props.isMe} />
+                  </group>
+                </group>
+              )}
             </group>
           ))}
-          <group ref={cards} position={[0, 0.36, -0.42]} rotation-x={-0.35}>
-            <HeldCards hand={props.hand} handKey={props.handKey} faceUp={props.isMe} />
-          </group>
           <group ref={head} position-y={0.62 + r}>
             <primitive object={parts.cabeca} />
-            <group ref={blink} position={[0, 0.04, -r + 0.03]}>
-              <primitive object={parts.olhos} />
+            <group ref={brows}><primitive object={parts.sobrancelhas} /></group>
+            <group ref={nose}><primitive object={parts.nariz} /></group>
+            <group ref={mouth} position={[0, character === 'presuntinho' ? -0.15 : -0.1, -r * 0.9]}>
+              <group position={[0, character === 'presuntinho' ? 0.15 : 0.1, r * 0.9]}><primitive object={parts.boca} /></group>
             </group>
+            <group ref={opening} visible={false}><primitive object={parts.abertura} /></group>
+            {eyes.map((eye, i) => <group key={i} ref={eye} position={[0, 0.04, -r + 0.03]}>
+              <primitive object={parts.olhos[i]!} />
+            </group>)}
           </group>
           {!props.isMe && (
-            <Html position={[0, 0.95 + 2 * r, 0]} center distanceFactor={4} zIndexRange={[20, 0]} portal={htmlLayer}>
-              <div className={`etiqueta${props.connected ? '' : ' caiu'}${props.active ? ' na-vez' : ''}`}>
+            <Html position={[0, 0.83 + 2 * r, 0]} center distanceFactor={4} zIndexRange={[20, 0]} portal={htmlLayer}>
+              <div title={`${props.name} · ${CHARACTERS[character].name}`} className={`etiqueta${props.playing ? ' compacta' : ''}${props.connected ? '' : ' caiu'}${props.active ? ' na-vez' : ''}${props.speakingAt !== null ? ' falando' : ''}`}>
                 <Portrait character={character} size={44} />
                 <div>
                   <strong>{props.name}</strong>
@@ -251,6 +310,7 @@ export function Character(props: CharacterProps) {
                     {CHARACTERS[character].name}
                     {props.host && ' · anfitrião'}
                   </span>
+                  {props.speakingAt !== null && <em className="voz-ativa">Falando</em>}
                   {props.bot ? (
                     <em className="computador">computador</em>
                   ) : !props.connected ? (

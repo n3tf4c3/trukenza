@@ -4,6 +4,31 @@ export const FELT_RADIUS = 1.27;
 export const TABLE_HEIGHT = 0.78;
 export const CHAIR_RADIUS = 2.1;
 export const SEAT_HEIGHT = 0.48;
+export const TABLE_CARD_WIDTH = 0.4;
+export const CARD_THICKNESS = 0.0012;
+
+/** Pouso das cartas: todos os cantos dentro do tampo e uma camada por carta, sem planos coincidentes. */
+export function tableCardPosition(seat: number, seats: number, trick: number, viewAngle: number): [number, number, number] {
+  const a = seatAngle(seat, seats);
+  const radius = seats === 2 ? 0.34 : 0.58;
+  const shift = seats === 2 ? 0.3 : 0.2;
+  const side = (trick - 1) * 0.12;
+  return [
+    Math.sin(a) * radius + Math.cos(viewAngle) * side + Math.sin(viewAngle) * shift,
+    TABLE_HEIGHT + 0.002 + (trick * seats + seat) * 0.0015,
+    Math.cos(a) * radius - Math.sin(viewAngle) * side + Math.cos(viewAngle) * shift,
+  ];
+}
+
+/** Vazas anteriores em dois montinhos na lateral, abrindo o centro para a próxima. */
+export function archivedCardPosition(seat: number, trick: number, viewAngle: number): [number, number, number] {
+  const side = viewAngle - Math.PI / 2;
+  return [
+    Math.sin(side) * 1.14 + Math.sin(viewAngle) * (trick * 0.36 - 0.18),
+    TABLE_HEIGHT + 0.004 + seat * 0.002,
+    Math.cos(side) * 1.14 + Math.cos(viewAngle) * (trick * 0.36 - 0.18),
+  ];
+}
 
 /** Ângulo da cadeira em volta da mesa (0 = +z). A câmera é que gira para ficar atrás da cadeira do jogador. */
 export function seatAngle(seat: number, count: number): number {

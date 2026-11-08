@@ -1,4 +1,7 @@
 import { useStore } from './store';
+import type { SceneryId } from '@trukenza/shared';
+import { BolichoMusic, pluckedString } from './music';
+import { materialSound, roomImpulse, type FoleyKind } from './foley';
 
 /**
  * Sons da mesa, todos sintetizados aqui pelo Web Audio (nenhum arquivo baixado, nada de terceiros):
@@ -27,9 +30,21 @@ let sfxBus: GainNode;
 let ambBus: GainNode;
 let white: AudioBuffer;
 let brown: AudioBuffer;
+let music: BolichoMusic;
+const materialBuffers = new Map<string, AudioBuffer>();
+const noteBuffers = new Map<number, AudioBuffer>();
+const voiceBuffers = new Map<string, Promise<AudioBuffer>>();
+let room: ConvolverNode;
+let variation = 0;
+
+function syncMusic(): void {
+  if (!ctx) return;
+  const s = useStore.getState();
+  music.setPlaying(wantAmbient && !document.hidden && s.soundOn && s.volume > 0 && s.musicOn && s.musicVolume > 0, s.musicVolume * (s.speaking ? 0.25 : 1));
+}
 
 /** Volume do ambiente em relação aos efeitos: só um fundo. */
-const AMBIENT_LEVEL = 0.32;
+const AMBIENT_LEVEL = 0.19;
 
 function masterLevel(): number {
   const { soundOn, volume } = useStore.getState();
@@ -59,9 +74,23 @@ function setup(): void {
   ctx = new Ctor();
   master = ctx.createGain();
   master.gain.value = masterLevel();
-  master.connect(ctx.destination);
+  const compressor = ctx.createDynamicsCompressor();
+  compressor.threshold.value = -10;
+  compressor.knee.value = 12;
+  compressor.ratio.value = 4;
+  compressor.attack.value = 0.008;
+  compressor.release.value = 0.2;
+  master.connect(compressor).connect(ctx.destination);
+  music = new BolichoMusic(ctx, master);
   sfxBus = ctx.createGain();
   sfxBus.connect(master);
+  room = ctx.createConvolver();
+  const impulse = ctx.createBuffer(2, Math.ceil(ctx.sampleRate * 0.32), ctx.sampleRate);
+  for (let ch = 0; ch < 2; ch++) impulse.copyToChannel(roomImpulse(ctx.sampleRate, ch), ch);
+  room.buffer = impulse;
+  const wet = ctx.createGain();
+  wet.gain.value = 0.12;
+  sfxBus.connect(room).connect(wet).connect(master);
   ambBus = ctx.createGain();
   ambBus.gain.value = 0;
   ambBus.connect(master);
@@ -77,15 +106,68 @@ function unlock(): void {
 }
 window.addEventListener('pointerdown', unlock);
 window.addEventListener('keydown', unlock);
+window.addEventListener('click', unlock, true);
+
+function loadVoiceClip(clip: string, context: AudioContext): Promise<AudioBuffer> {
+  let buffer = voiceBuffers.get(clip);
+  if (!buffer) {
+    buffer = fetch(`/vozes/${clip}.wav?v=4`).then(async response => {
+      if (!response.ok) throw Error('Fala indisponível');
+      return context.decodeAudioData(await response.arrayBuffer());
+    });
+    voiceBuffers.set(clip, buffer);
+    void buffer.catch(() => voiceBuffers.delete(clip));
+  }
+  return buffer;
+}
+
+/** Entrada na mesa: baixa e decodifica as falas antes do primeiro canto. */
+export function prepareVoiceClips(clips: string[]): void {
+  setup();
+  if (!ctx) return;
+  for (const clip of clips) if (/^[a-z-]+$/.test(clip)) void loadVoiceClip(clip, ctx).catch(() => {});
+}
+
+/** Falas próprias pré-sintetizadas: mesmo volume geral, sem depender do motor de voz do navegador. */
+export function playVoiceClip(clip: string, rate: number, volume: number, started: () => void, ended: (failed?: boolean) => void): () => void {
+  setup();
+  const context = ctx;
+  let canceled = false;
+  let source: AudioBufferSourceNode | null = null;
+  let gain: GainNode | null = null;
+  if (!context || !/^[a-z-]+$/.test(clip)) { ended(true); return () => {}; }
+  const buffer = loadVoiceClip(clip, context);
+  void Promise.all([buffer, context.resume()]).then(([decoded]) => {
+    if (canceled) return;
+    if (context.state !== 'running') { ended(true); return; }
+    source = context.createBufferSource();
+    source.buffer = decoded;
+    source.playbackRate.value = rate;
+    gain = context.createGain();
+    gain.gain.value = volume;
+    source.connect(gain).connect(master);
+    source.onended = () => {
+      source?.disconnect(); gain?.disconnect();
+      if (!canceled) ended();
+    };
+    source.start();
+    started();
+  }).catch(() => { if (!canceled) ended(true); });
+  return () => { canceled = true; source?.stop(); source?.disconnect(); gain?.disconnect(); };
+}
 
 useStore.subscribe((s, prev) => {
-  if (!ctx || (s.soundOn === prev.soundOn && s.volume === prev.volume)) return;
+  if (!ctx) return;
+  if (s.musicOn !== prev.musicOn || s.musicVolume !== prev.musicVolume || s.soundOn !== prev.soundOn || s.volume !== prev.volume || s.speaking !== prev.speaking) syncMusic();
+  if (s.speaking !== prev.speaking) sfxBus.gain.setTargetAtTime(s.speaking ? 0.55 : 1, ctx.currentTime, 0.06);
+  if (s.soundOn === prev.soundOn && s.volume === prev.volume) return;
   master.gain.setTargetAtTime(masterLevel(), ctx.currentTime, 0.05);
 });
 
 // Com a aba escondida o ambiente se cala; os efeitos (como o aviso da vez) continuam.
 document.addEventListener('visibilitychange', () => {
   if (ctx && ambientOn) ambBus.gain.setTargetAtTime(document.hidden ? 0 : AMBIENT_LEVEL, ctx.currentTime, 0.3);
+  syncMusic();
 });
 
 // --- Peças básicas -------------------------------------------------------------------------------
@@ -115,6 +197,7 @@ function noise(at: number, dur: number, o: NoiseOptions, bus: AudioNode = sfxBus
   g.gain.exponentialRampToValueAtTime(o.gain, at + attack);
   g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
   src.connect(filter).connect(g).connect(bus);
+  src.onended = () => { src.disconnect(); filter.disconnect(); g.disconnect(); };
   src.start(at, Math.random() * 1.5, dur + 0.05);
 }
 
@@ -127,7 +210,7 @@ interface ToneOptions {
   lowpass?: number;
 }
 
-function tone(at: number, freq: number, dur: number, o: ToneOptions): void {
+function tone(at: number, freq: number, dur: number, o: ToneOptions, bus: AudioNode = sfxBus): void {
   const c = ctx!;
   const osc = c.createOscillator();
   osc.type = o.type ?? 'sine';
@@ -139,15 +222,56 @@ function tone(at: number, freq: number, dur: number, o: ToneOptions): void {
   g.gain.exponentialRampToValueAtTime(o.gain, at + attack);
   g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
   let out: AudioNode = osc;
+  let filter: BiquadFilterNode | undefined;
   if (o.lowpass) {
     const f = c.createBiquadFilter();
     f.type = 'lowpass';
     f.frequency.value = o.lowpass;
+    filter = f;
     out = osc.connect(f);
   }
-  out.connect(g).connect(sfxBus);
+  out.connect(g).connect(bus);
   osc.start(at);
   osc.stop(at + dur + 0.05);
+  osc.onended = () => { osc.disconnect(); filter?.disconnect(); g.disconnect(); };
+}
+
+function sample(at: number, buffer: AudioBuffer, gain: number, pan = 0): void {
+  const c = ctx!;
+  const source = c.createBufferSource();
+  source.buffer = buffer;
+  const level = c.createGain();
+  level.gain.value = gain;
+  const stereo = c.createStereoPanner();
+  stereo.pan.value = pan;
+  source.connect(level).connect(stereo).connect(sfxBus);
+  source.onended = () => { source.disconnect(); level.disconnect(); stereo.disconnect(); };
+  source.start(at);
+}
+
+function foley(kind: FoleyKind, at: number, gain: number): void {
+  const v = variation++ % 4;
+  const key = `${kind}:${v}`;
+  let buffer = materialBuffers.get(key);
+  if (!buffer) {
+    const data = materialSound(kind, ctx!.sampleRate, v);
+    buffer = ctx!.createBuffer(1, data.length, ctx!.sampleRate);
+    buffer.copyToChannel(data, 0);
+    materialBuffers.set(key, buffer);
+  }
+  sample(at, buffer, gain, (v - 1.5) * 0.045);
+}
+
+/** Pequenas respostas de violão combinam com a trilha e não soam como alarmes. */
+function pluck(at: number, midi: number, gain: number): void {
+  let buffer = noteBuffers.get(midi);
+  if (!buffer) {
+    const data = pluckedString(midi, ctx!.sampleRate);
+    buffer = ctx!.createBuffer(1, data.length, ctx!.sampleRate);
+    buffer.copyToChannel(data, 0);
+    noteBuffers.set(midi, buffer);
+  }
+  sample(at, buffer, gain);
 }
 
 /** Carta saindo da mão: um sopro curto que sobe. */
@@ -157,14 +281,12 @@ function swish(at: number, dur = 0.16, gain = 0.22): void {
 
 /** Carta batendo no tampo de madeira. */
 function slap(at: number, gain = 0.5): void {
-  noise(at, 0.06, { type: 'bandpass', freq: 2600, q: 0.7, gain });
-  tone(at, 150, 0.08, { gain: gain * 0.5, toFreq: 70 });
+  foley('papel', at, gain * 1.1);
 }
 
 /** Nó dos dedos na mesa. */
 function knock(at: number, gain = 0.5): void {
-  tone(at, 190, 0.14, { gain, toFreq: 120 });
-  noise(at, 0.04, { type: 'bandpass', freq: 900, q: 3, gain: gain * 0.6 });
+  foley('madeira', at, gain);
 }
 
 /** Sino curto (avisos e acertos). */
@@ -175,9 +297,7 @@ function bell(at: number, freq: number, gain: number, dur = 0.7): void {
 
 /** Um feijão caindo no potinho de barro. */
 function bean(at: number): void {
-  tone(at, 2200 + Math.random() * 900, 0.035, { type: 'triangle', gain: 0.16 });
-  noise(at, 0.02, { type: 'bandpass', freq: 4200, q: 2, gain: 0.12 });
-  tone(at, 520 + Math.random() * 60, 0.09, { gain: 0.05 });
+  foley('feijao', at, 0.35);
 }
 
 // --- Efeitos -------------------------------------------------------------------------------------
@@ -188,9 +308,9 @@ export function sfx(name: Sfx, delay = 0): void {
   const t = ctx.currentTime + 0.01 + delay;
   switch (name) {
     case 'carta':
-      swish(t);
+      swish(t, 0.18, 0.095);
       // Pousa junto com a animação do voo (TableCards: FLY_S = 0,42 s).
-      slap(t + 0.36);
+      slap(t + 0.42);
       return;
     case 'embaralhar': {
       // Duas metades se misturando, a ponte e as cartas assentando.
@@ -202,44 +322,45 @@ export function sfx(name: Sfx, delay = 0): void {
     case 'canto':
       knock(t, 0.55);
       knock(t + 0.13, 0.6);
-      tone(t + 0.05, 220, 0.38, { type: 'sawtooth', gain: 0.09, toFreq: 330, lowpass: 1400, attack: 0.08 });
+      [52, 59, 64].forEach((n, i) => pluck(t + 0.05 + i * 0.025, n, 0.32));
       return;
     case 'quero':
       knock(t, 0.45);
-      bell(t + 0.05, 659, 0.12, 0.4);
-      bell(t + 0.17, 988, 0.12, 0.5);
+      pluck(t + 0.04, 64, 0.5);
+      pluck(t + 0.16, 71, 0.42);
       return;
     case 'nao-quero':
       knock(t, 0.45);
-      tone(t + 0.05, 392, 0.3, { type: 'triangle', gain: 0.1 });
-      tone(t + 0.2, 294, 0.4, { type: 'triangle', gain: 0.1 });
+      pluck(t + 0.04, 59, 0.45);
+      pluck(t + 0.18, 52, 0.4);
       return;
     case 'parda':
       knock(t, 0.3);
       knock(t + 0.18, 0.3);
       return;
     case 'vaza-nossa':
-      bell(t, 1319, 0.07, 0.5);
+      pluck(t, 76, 0.4);
       return;
     case 'recolher':
-      noise(t, 0.5, { type: 'lowpass', freq: 3000, toFreq: 600, q: 0.7, gain: 0.18, attack: 0.15 });
+      foley('deslizar', t, 0.55);
       slap(t + 0.5, 0.25);
       return;
     case 'vez':
-      bell(t, 659, 0.14);
-      bell(t + 0.16, 988, 0.12, 0.9);
+      bell(t, 660, 0.065, 0.45);
+      pluck(t + 0.13, 71, 0.48);
       return;
     case 'tique':
-      tone(t, 1250, 0.035, { type: 'triangle', gain: 0.14 });
+      foley('feijao', t, 0.13);
       return;
     case 'tique-final':
-      tone(t, 1700, 0.05, { type: 'triangle', gain: 0.2 });
+      foley('feijao', t, 0.23);
+      tone(t, 880, 0.065, { gain: 0.045 });
       return;
     case 'vitoria':
-      [523, 659, 784, 1047].forEach((f, i) => bell(t + i * 0.13, f, 0.13, i === 3 ? 1.2 : 0.5));
+      [52, 59, 64, 68, 71, 76].forEach((n, i) => pluck(t + i * 0.085, n, 0.6));
       return;
     case 'derrota':
-      [392, 330, 262].forEach((f, i) => tone(t + i * 0.2, f, 0.5, { type: 'triangle', gain: 0.1 }));
+      [59, 55, 52].forEach((n, i) => pluck(t + i * 0.22, n, 0.45));
       return;
   }
 }
@@ -264,6 +385,7 @@ export function pointsSound(points: number, delay = 0): void {
 // --- Ambiente do bolicho ---------------------------------------------------------------------------
 
 let wantAmbient = false;
+let ambientScenery: SceneryId = 'bolicho';
 let ambientOn = false;
 let ambientNodes: AudioScheduledSourceNode[] = [];
 let crackleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -271,6 +393,16 @@ let crackleTimer: ReturnType<typeof setTimeout> | undefined;
 /** Estalos da lenha, em intervalos irregulares. */
 function crackle(): void {
   if (!ctx || !ambientOn) return;
+  if (ambientScenery !== 'bolicho') {
+    if (ctx.state === 'running' && !document.hidden && ambientScenery !== 'vegas' && ambientScenery !== 'cataratas') {
+      const t = ctx.currentTime + 0.02;
+      const shore = ambientScenery === 'praia';
+      tone(t, shore ? 1100 : 2300, shore ? 0.45 : 0.12, { gain: 0.045, toFreq: shore ? 800 : 3100, attack: 0.035 }, ambBus);
+      if (!shore) tone(t + 0.18, 2900, 0.15, { gain: 0.035, toFreq: 2000, attack: 0.025 }, ambBus);
+    }
+    crackleTimer = setTimeout(crackle, 5000 + Math.random() * 7000);
+    return;
+  }
   if (ctx.state === 'running' && !document.hidden) {
     const t = ctx.currentTime + 0.02;
     const pops = Math.random() < 0.2 ? 3 : 1;
@@ -282,8 +414,10 @@ function crackle(): void {
 }
 
 /** Liga o fogo e o vento (ao entrar na mesa). Se o áudio ainda não foi destravado, liga assim que for. */
-export function startAmbient(): void {
+export function startAmbient(scenery: SceneryId = ambientScenery): void {
+  ambientScenery = scenery;
   wantAmbient = true;
+  syncMusic();
   if (!ctx || ambientOn) return;
   ambientOn = true;
   const c = ctx;
@@ -293,9 +427,12 @@ export function startAmbient(): void {
   fire.loop = true;
   const fireLow = c.createBiquadFilter();
   fireLow.type = 'lowpass';
-  fireLow.frequency.value = 420;
+  const beach = scenery === 'praia';
+  const falls = scenery === 'cataratas';
+  const city = scenery === 'vegas' || scenery === 'paris';
+  fireLow.frequency.value = falls ? 1800 : beach ? 950 : city ? 240 : 420;
   const fireGain = c.createGain();
-  fireGain.gain.value = 0.5;
+  fireGain.gain.value = scenery === 'bolicho' ? 0.5 : falls ? 0.75 : beach ? 0.12 : city ? 0.18 : 0.035;
   fire.connect(fireLow).connect(fireGain).connect(ambBus);
   // O vento na janela: um sopro que vai e volta devagar.
   const wind = c.createBufferSource();
@@ -304,14 +441,14 @@ export function startAmbient(): void {
   wind.playbackRate.value = 1.7;
   const windBand = c.createBiquadFilter();
   windBand.type = 'bandpass';
-  windBand.frequency.value = 520;
+  windBand.frequency.value = falls ? 1600 : beach ? 1100 : 520;
   windBand.Q.value = 0.8;
   const windGain = c.createGain();
-  windGain.gain.value = 0.12;
+  windGain.gain.value = beach ? 0.6 : falls ? 0.3 : city ? 0.06 : 0.12;
   const lfo = c.createOscillator();
-  lfo.frequency.value = 0.06;
+  lfo.frequency.value = beach ? 0.12 : 0.06;
   const lfoDepth = c.createGain();
-  lfoDepth.gain.value = 0.09;
+  lfoDepth.gain.value = beach ? 0.48 : city ? 0.04 : 0.09;
   lfo.connect(lfoDepth).connect(windGain.gain);
   const lfoFreq = c.createGain();
   lfoFreq.gain.value = 180;
@@ -329,6 +466,7 @@ export function startAmbient(): void {
 /** Desliga o ambiente (ao sair da mesa), sumindo aos poucos. */
 export function stopAmbient(): void {
   wantAmbient = false;
+  syncMusic();
   if (!ctx || !ambientOn) return;
   ambientOn = false;
   clearTimeout(crackleTimer);

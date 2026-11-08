@@ -1,10 +1,10 @@
-"""Os quatro personagens do Trukenza, em peças articuladas.
+"""Os personagens do Trukenza, em peças articuladas.
 
     blender -b --factory-startup -P assets/blender/personagens.py [-- --previa caminho.png]
 
 Gera apps/web/public/modelos/personagens.glb com, para cada personagem (`neymt`, `presuntinho`,
-`moleti`, `baiaca`), as peças `<id>_tronco`, `<id>_cabeca`, `<id>_olhos`, `<id>_braco`, `<id>_coxa`
-e `<id>_canela`. Cada peça é modelada em volta do próprio ponto de giro, nas medidas do esqueleto que
+`moleti`, `baiaca`, `luistesoura`, `sardinha`, `gordodofusca`, `tiba`, `negon`), corpo articulado e peças
+faciais separadas: olho_esq, olho_dir, sobrancelhas, boca, nariz e abertura. Cada peça é modelada nas medidas do esqueleto que
 o jogo já anima (`apps/web/src/scene/Character.tsx`):
 
 - quadril: origem do corpo; coxas giram em (±0,11; 0; 0) e o tronco nasce aqui;
@@ -105,16 +105,18 @@ def body_profile(scale=1.0, neck=0.065):
             (0.17 * s, 0.55), (0.11 * s, 0.61), (neck, 0.64), (neck, 0.7)]
 
 
-SKIN_TONES = {'neymt': '#e9b48f', 'presuntinho': '#ffb3c1', 'moleti': '#e0a376', 'baiaca': '#7a4a2c'}
-HEAD_R = {'neymt': 0.22, 'presuntinho': 0.25, 'moleti': 0.22, 'baiaca': 0.22}
+SKIN_TONES = {'neymt': '#e9b48f', 'presuntinho': '#ffb3c1', 'moleti': '#e0a376', 'baiaca': '#7a4a2c',
+              'luistesoura': '#d8a077', 'sardinha': '#84929d', 'gordodofusca': '#ad734d', 'tiba': '#c78c64', 'negon': '#633d2a'}
+HEAD_R = {'neymt': 0.22, 'presuntinho': 0.25, 'moleti': 0.22, 'baiaca': 0.22, 'luistesoura': 0.23, 'sardinha': 0.235, 'gordodofusca': 0.25, 'tiba': 0.23, 'negon': 0.30}
 
 parts = []
 
 
 def build(cid, *, shirt, shirt_fn=None, sleeve_fn=None, pants, shoe, body_scale=1.0, sleeve_skin=False, extras_torso=None,
-          extras_head=None, eye_color='#5a3a22', brow='#3a2414', lips='#8a3a2c', boots=None, platform=False, teeth=False):
+          extras_head=None, eye_color='#5a3a22', brow='#3a2414', lips='#8a3a2c', boots=None, platform=False, teeth=False,
+          feline=False, short_sleeves=False):
     R = HEAD_R[cid]
-    skin = mat(f'{cid}_pele', SKIN_TONES[cid], rough=0.55)
+    skin = mat(f'{cid}_pele', SKIN_TONES[cid], rough=0.72)
     shirt_m = mat(f'{cid}_camisa', '#ffffff' if shirt_fn else shirt[0], rough=shirt[1], metal=shirt[2] if len(shirt) > 2 else 0.0)
     pants_m = mat(f'{cid}_calca', pants, rough=0.8)
     shoe_m = mat(f'{cid}_sapato', shoe, rough=0.4, metal=0.6 if platform else 0.0)
@@ -133,8 +135,16 @@ def build(cid, *, shirt, shirt_fn=None, sleeve_fn=None, pants, shoe, body_scale=
     canela_parts.append(box('sola', (0, -0.44 + sole / 2, -0.055), (0.135, sole + 0.01, 0.255), mat('sola', '#2a1c14', rough=0.8), bevel=0.01))
     if boots:
         canela_parts.append(box('salto', (0, -0.425, 0.04), (0.11, 0.05, 0.07), mat('sola', '#2a1c14'), bevel=0.008))
+    if cid == 'gordodofusca':
+        coxa.scale.x *= 1.25
+        coxa.scale.y *= 1.25  # profundidade no Blender; altura fica igual para preservar os joelhos
+    canela = join(f'{cid}_canela', canela_parts)
+    if cid == 'negon':
+        for leg in [coxa, canela]:
+            leg.scale.x *= 0.8
+            leg.scale.y *= 0.8
     parts.append(coxa)
-    parts.append(join(f'{cid}_canela', canela_parts))
+    parts.append(canela)
 
     # ---------- tronco
     t = []
@@ -143,7 +153,7 @@ def build(cid, *, shirt, shirt_fn=None, sleeve_fn=None, pants, shoe, body_scale=
         torso = paint_fn(torso, shirt_fn)
     t.append(torso)
     for sx in (-1, 1):  # ombros
-        o = sphere('ombro', (sx * 0.215 * body_scale, 0.52, 0), (0.085, 0.075, 0.08), shirt_m)
+        o = sphere('ombro', (sx * 0.198 * body_scale, 0.50, 0), (0.082, 0.105, 0.078), shirt_m)
         t.append(paint_fn(o, sleeve_fn or shirt_fn) if (sleeve_fn or shirt_fn) else o)
     t.append(cyl('pescoco', (0, 0.66, 0), 0.062, 0.12, skin, verts=16, smooth=True))
     if extras_torso:
@@ -153,50 +163,102 @@ def build(cid, *, shirt, shirt_fn=None, sleeve_fn=None, pants, shoe, body_scale=
     # ---------- braço (manga, punho e mão)
     b = []
     sleeve_m = skin if sleeve_skin else shirt_m
-    sleeve = lathe('manga', (0, -0.31, 0), [(0.01, -0.01), (0.058, 0.0), (0.062, 0.1), (0.07, 0.28), (0.072, 0.34), (0.01, 0.36)], sleeve_m,
-                   verts=16, subdiv=1)
+    if short_sleeves:
+        sleeve = lathe('manga_curta', (0, -0.15, 0), [(0.01, -0.01), (0.072, 0), (0.075, 0.06), (0.074, 0.16), (0.01, 0.20)],
+                       sleeve_m, verts=16, subdiv=1)
+        b.append(lathe('antebraco', (0, -0.32, 0), [(0.01, -0.015), (0.052, 0), (0.057, 0.12), (0.06, 0.19), (0.01, 0.20)], skin, verts=16, subdiv=1))
+        b.append(cyl('barra_manga', (0, -0.145, 0), 0.072, 0.025, mat('tiba_barra', '#202126'), verts=16, smooth=True))
+    else:
+        sleeve = lathe('manga', (0, -0.31, 0), [(0.01, -0.01), (0.058, 0.0), (0.062, 0.1), (0.07, 0.28), (0.072, 0.34), (0.01, 0.36)], sleeve_m,
+                       verts=16, subdiv=1)
     if not sleeve_skin and (sleeve_fn or shirt_fn):
         sleeve = paint_fn(sleeve, sleeve_fn or shirt_fn)
     b.append(sleeve)
-    if not sleeve_skin:
+    if not sleeve_skin and not short_sleeves:
         b.append(cyl('punho', (0, -0.3, 0), 0.064, 0.03, sleeve_m, verts=16, smooth=True, tint=(0.85, 0.85, 0.85)))
     b.append(sphere('mao', (0, -0.38, -0.005), (0.055, 0.07, 0.046), skin))
     b.append(sphere('polegar', (0, -0.355, -0.05), (0.02, 0.034, 0.02), skin))
-    parts.append(join(f'{cid}_braco', b))
+    arm = join(f'{cid}_braco', b)
+    if cid == 'negon':
+        arm.scale.x *= 0.82
+        arm.scale.y *= 0.82
+    parts.append(arm)
 
     # ---------- cabeça (rosto e acessórios)
-    h = [sphere('cranio', (0, 0, 0), (R, R * 1.02, R * 0.98), skin, segments=32, rings=24)]
-    for sx in (-1, 1):
-        h.append(sphere('orelha', (sx * R * 0.97, -0.01, 0.01), (0.035, 0.055, 0.03), skin))
-    if cid != 'presuntinho':
-        h.append(sphere('nariz', (0, -0.035, -R * 0.98), (0.032, 0.03, 0.036), skin, tint=(0.95, 0.9, 0.88)))
-        brow_m = mat(f'{cid}_sobrancelha', brow, rough=0.9)
+    h = [sphere('cranio', (0, 0, 0), (R, R * 1.02, R * 0.98), skin, segments=40, rings=28)]
+    if not feline:
         for sx in (-1, 1):
-            h.append(tube('sobrancelha', arc((sx * 0.085, 0.085, -R * 0.93), 0.055, math.radians(60), math.radians(120), n=6, bulge=0.004),
-                          [0.009, 0.013, 0.015, 0.015, 0.013, 0.009], brow_m, sides=8))
+            h.append(sphere('orelha', (sx * R * 0.97, -0.01, 0.01), (0.035, 0.055, 0.03), skin))
+            h.append(sphere('orelha_interna', (sx * R * 1.025, -0.01, -0.012), (0.016, 0.029, 0.008), skin,
+                            tint=(0.87, 0.73, 0.68), segments=16, rings=12))
+    if cid not in ('presuntinho', 'sardinha'):
+        for sx in (-1, 1):
+            # Volume discreto nas maçãs do rosto; mesma pele, sem bolinhas coladas.
+            h.append(sphere('maca_rosto', (sx * 0.10, -0.075, -R * 0.64), (0.086, 0.060, 0.052), skin,
+                            tint=(1.0, 0.94, 0.91), segments=20, rings=16))
+        # União volumétrica da pele: bochechas e orelhas fazem parte do rosto, sem costuras de esferas.
+        face = join('rosto_unido', h)
+        remesh = face.modifiers.new('pele_continua', 'REMESH')
+        remesh.mode = 'VOXEL'
+        remesh.voxel_size = 0.011
+        remesh.use_smooth_shade = True
+        smooth = face.modifiers.new('suavizar_pele', 'SMOOTH')
+        smooth.factor, smooth.iterations = 0.8, 4
+        face = apply_all([face])[0]
+        paint(face, (1, 1, 1))
+        h = [face]
+    for sx in (-1, 1):
+        # Pálpebra superior prende os olhos ao rosto; os olhos continuam no grupo separado que pisca.
+        h.append(tube('palpebra', arc((sx * 0.085, 0.04, -R + 0.016), 0.060,
+                      math.radians(18), math.radians(162), n=12, bulge=0.006),
+                      [0.004, 0.005, 0.007, 0.008, 0.009, 0.009, 0.009, 0.009, 0.008, 0.007, 0.005, 0.004], skin, sides=8))
+    if cid != 'presuntinho' and not feline:
+        h.append(sphere('nariz', (0, -0.035, -R * 0.98), (0.032, 0.03, 0.036), skin, tint=(0.95, 0.9, 0.88)))
+    brow_m = mat(f'{cid}_sobrancelha', brow, rough=0.9)
+    for sx in (-1, 1):
+        h.append(tube('sobrancelha', arc((sx * 0.085, 0.085, -R * 0.93), 0.055, math.radians(60), math.radians(120), n=6, bulge=0.004),
+                      [0.009, 0.013, 0.015, 0.015, 0.013, 0.009], brow_m, sides=8))
     mouth_m = mat(f'{cid}_boca', lips, rough=0.5)
     my = -0.1 if cid != 'presuntinho' else -0.15
-    h.append(tube('boca', arc((0, my + 0.05, -R * 0.9), 0.06, math.radians(-150), math.radians(-30), n=9, bulge=0.012),
-                  [0.008, 0.011, 0.013, 0.014, 0.014, 0.014, 0.013, 0.011, 0.008], mouth_m, sides=8))
+    if not feline and cid != 'negon':
+        h.append(tube('boca', arc((0, my + 0.05, -R * 0.9), 0.06, math.radians(-150), math.radians(-30), n=9, bulge=0.012),
+                      [0.008, 0.011, 0.013, 0.014, 0.014, 0.014, 0.013, 0.011, 0.008], mouth_m, sides=8))
     if teeth:
         h.append(sphere('dentes', (0, my + 0.005, -R * 0.9), (0.04, 0.012, 0.01), mat('dentes', '#fbf6ec', rough=0.3)))
     if extras_head:
         h.extend(extras_head(R, skin))
+    # Expressões separadas da pele. O cliente anima os clones, sem deformar cabelo, aparelho ou olhos do gato.
+    facial = {
+        'sobrancelhas': ('sobrancelha',),
+        'boca': ('boca', 'dentes', 'sorriso', 'fio_aparelho', 'elastico_aparelho', 'braquete'),
+        'nariz': ('nariz', 'narina') + (('focinho',) if cid == 'presuntinho' else ()),
+    }
+    for part, prefixes in facial.items():
+        selected = [o for o in h if o.name.startswith(prefixes)]
+        h = [o for o in h if o not in selected]
+        parts.append(join(f'{cid}_{part}', selected))
+    opening = sphere(f'{cid}_abertura', (0, my, -R * (1.14 if feline else 0.96)),
+                     (0.047, 0.032, 0.018), mat('interior_boca', '#301c20', rough=0.95))
+    parts.append(opening)
     parts.append(join(f'{cid}_cabeca', h))
 
     # ---------- olhos (grupo que pisca)
-    e = []
     white = mat('olho_branco', '#fbfaf6', rough=0.2)
     iris = mat(f'{cid}_iris', eye_color, rough=0.25)
     pupil = mat('pupila', '#0d0a08', rough=0.15)
     shine = mat('brilho_olho', '#ffffff', rough=0.1, emit='#ffffff', strength=0.6)
     for sx in (-1, 1):
+        e = []
         x = sx * 0.085
-        e.append(sphere('branco', (x, 0, 0.004), (0.058, 0.066, 0.04), white))
-        e.append(sphere('iris', (x, -0.006, -0.026), (0.031, 0.036, 0.014), iris))
-        e.append(sphere('pupila', (x, -0.007, -0.037), (0.016, 0.019, 0.007), pupil))
-        e.append(sphere('brilho', (x + 0.012, 0.011, -0.042), (0.007, 0.007, 0.004), shine, segments=8, rings=6))
-    parts.append(join(f'{cid}_olhos', e))
+        e.append(sphere('branco', (x, 0, 0.002), (0.055, 0.062, 0.032), white))
+        # Sardinha: um olho normal; o outro permanentemente baixo e voltado para o peixe no peito.
+        down = feline and sx == 1
+        ix, iy, iz = (x - 0.01, -0.037, -0.018) if down else (x, -0.006, -0.026)
+        e.append(sphere('iris', (ix, iy, iz), (0.031, 0.025 if down else 0.036, 0.014), iris))
+        e.append(sphere('pupila', (ix, iy - 0.001, iz - 0.011), (0.009 if feline else 0.016, 0.019, 0.007), pupil))
+        highlight = (ix + 0.009, iy + 0.01, iz - 0.016) if feline else (x + 0.012, 0.011, -0.042)
+        e.append(sphere('brilho', highlight, (0.007, 0.007, 0.004), shine, segments=8, rings=6))
+        parts.append(join(f'{cid}_olho_{"esq" if sx == -1 else "dir"}', e))
 
 
 # ======================================================================== NeyMT
@@ -230,7 +292,7 @@ def neymt_head(R, skin):
     return out
 
 
-build('neymt', shirt=('#6c22b8', 0.28, 0.55), pants='#2b1640', shoe='#e8b43a', platform=True, body_scale=0.93,
+build('neymt', shirt=('#6c22b8', 0.7, 0.08), pants='#2b1640', shoe='#e8b43a', platform=True, body_scale=0.93,
       extras_torso=neymt_torso, extras_head=neymt_head, eye_color='#3b6b3a', brow='#1d1410', lips='#c0263a')
 
 # ======================================================================== Presuntinho
@@ -353,6 +415,307 @@ def baiaca_head(R, skin):
 build('baiaca', shirt=('#ffffff', 0.8), shirt_fn=stripes, pants='#f2ede2', shoe='#6b3b1c', extras_torso=baiaca_torso,
       extras_head=baiaca_head, eye_color='#3a2414', brow='#1a120d', lips='#5a2a22', teeth=True)
 
+# ======================================================================== Luis Tesoura e Sardinha
+def applique(name, outline, material, radius=0.218):
+    """Aplique fino que acompanha a curva da camisa; não fica suspenso diante do peito."""
+    me = bpy.data.meshes.new(name)
+    bm = bmesh.new()
+    verts = [bm.verts.new((x, y, 0)) for x, y in outline]
+    bm.faces.new(verts)
+    bmesh.ops.triangulate(bm, faces=bm.faces[:])
+    bmesh.ops.subdivide_edges(bm, edges=bm.edges[:], cuts=7, use_grid_fill=True)
+    for v in bm.verts:
+        x, y = v.co.x, v.co.y
+        v.co = P(x, y, -math.sqrt(max(0.001, radius * radius - x * x)) - 0.007)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    bm.to_mesh(me)
+    bm.free()
+    o = bpy.data.objects.new(name, me)
+    bpy.context.collection.objects.link(o)
+    o.data.materials.append(material)
+    for p in me.polygons:
+        p.use_smooth = True
+    paint(o, (1, 1, 1))
+    return o
+
+
+APRON = lin('#263e50')
+LINEN = lin('#f0e7d7')
+
+
+def luis_shirt(x, y, z):
+    # Avental sobre camisa de linho; as mangas usam só a cor do tecido.
+    front = z < -0.02 and (y < 0.34 or (abs(x) < 0.14 and y < 0.55))
+    return APRON if front else LINEN
+
+
+def luis_torso(s):
+    leather = mat('luis_couro', '#d99a52', rough=0.7)
+    steel = mat('luis_aco', '#dce5eb', rough=0.25, metal=0.8)
+    pocket = mat('luis_bolso', '#38576a', rough=0.85)
+    out = []
+    for sx in (-1, 1):
+        out.append(tube('avental_alca', [(sx * 0.115, 0.48, -0.18), (sx * 0.16, 0.59, -0.10),
+                        (sx * 0.16, 0.61, 0.045), (sx * 0.13, 0.4, 0.18)], 0.015, leather, sides=8))
+        out.append(sphere('avental_rebite', (sx * 0.115, 0.48, -0.19), (0.012, 0.012, 0.006), GOLD, segments=10, rings=8))
+    out.append(applique('bolso_avental', [(-0.13, 0.16), (0.13, 0.16), (0.13, 0.32), (-0.13, 0.32)], pocket))
+    # Tesoura presa no peito: duas argolas, lâminas cruzadas e parafuso no eixo.
+    for x in (-0.082, -0.012):
+        out.append(torus('tesoura_argola', (x, 0.357, -0.231), 0.023, 0.005, leather, rot=(math.pi / 2, 0, 0)))
+    out.append(tube('tesoura_lamina', [(-0.082, 0.38, -0.232), (-0.047, 0.409, -0.235), (0.005, 0.495, -0.23)],
+                    [0.007, 0.009, 0.001], steel, sides=6))
+    out.append(tube('tesoura_lamina', [(-0.012, 0.38, -0.235), (-0.047, 0.409, -0.238), (-0.099, 0.495, -0.21)],
+                    [0.007, 0.009, 0.001], steel, sides=6))
+    out.append(sphere('tesoura_eixo', (-0.047, 0.409, -0.245), (0.011, 0.011, 0.005), GOLD, segments=12, rings=8))
+    comb = mat('luis_pente', '#b84c45', rough=0.55)
+    out.append(box('pente_dorso', (0.073, 0.365, -0.22), (0.012, 0.16, 0.012), comb, bevel=0.004))
+    for k in range(9):
+        out.append(box('pente_dente', (0.095, 0.30 + k * 0.016, -0.22), (0.04, 0.005, 0.01), comb, bevel=0.002))
+    # Uma toalha pequena sobre um ombro.
+    towel = mat('luis_toalha', '#e8dfc9', rough=1.0)
+    out.append(box('toalha_ombro', (0.215, 0.53, 0), (0.09, 0.025, 0.20), towel, bevel=0.012, segments=3))
+    out.append(box('toalha_ponta', (0.215, 0.44, -0.10), (0.09, 0.19, 0.022), towel, bevel=0.01, segments=3))
+    return out
+
+
+def luis_head(R, skin):
+    # Cabeça inteiramente careca: só sobrancelhas e um bigode curto bem aparado.
+    whisker = mat('luis_bigode', '#4d3025', rough=0.9)
+    return [tube('bigode_aparado', [(-0.07, -0.082, -R * 0.92), (-0.035, -0.066, -R * 1.01),
+                 (0, -0.072, -R * 1.025), (0.035, -0.066, -R * 1.01), (0.07, -0.082, -R * 0.92)],
+                 [0.006, 0.012, 0.01, 0.012, 0.006], whisker, sides=8)]
+
+
+build('luistesoura', shirt=('#ffffff', 0.85), shirt_fn=luis_shirt, sleeve_fn=lambda x, y, z: LINEN,
+      pants='#253441', shoe='#51372a', extras_torso=luis_torso, extras_head=luis_head,
+      eye_color='#5b794b', brow='#4d3025', lips='#834d39')
+
+
+def cat_ear(name, sx, material, inset=False):
+    # Cunha triangular com volume; o triângulo rosado fica na face da frente.
+    points = [(sx * 0.105, 0.155, -0.08), (sx * 0.215, 0.145, -0.015), (sx * 0.205, 0.325, -0.015),
+              (sx * 0.105, 0.155, 0.045), (sx * 0.215, 0.145, 0.08), (sx * 0.205, 0.325, 0.04)]
+    faces = [(0, 1, 2), (5, 4, 3), (0, 3, 4, 1), (1, 4, 5, 2), (2, 5, 3, 0)]
+    if inset:
+        points = [(sx * 0.14, 0.18, -0.069), (sx * 0.196, 0.176, -0.038), (sx * 0.197, 0.282, -0.031)]
+        faces = [(0, 1, 2)]
+    me = bpy.data.meshes.new(name)
+    me.from_pydata([P(*p) for p in points], [], faces)
+    me.update()
+    bm = bmesh.new(); bm.from_mesh(me)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:]); bm.to_mesh(me); bm.free()
+    o = bpy.data.objects.new(name, me)
+    bpy.context.collection.objects.link(o)
+    o.data.materials.append(material)
+    paint(o, (1, 1, 1))
+    return o
+
+
+def sardinha_head(R, skin):
+    cream = mat('sardinha_focinho', '#eee6d4', rough=0.85)
+    pink = mat('sardinha_rosa', '#cc8c96', rough=0.65)
+    ink = mat('sardinha_bigode', '#3a4650', rough=0.85)
+    out = []
+    for sx in (-1, 1):
+        out.extend([cat_ear('orelha_gato', sx, skin), cat_ear('orelha_interna', sx, pink, inset=True)])
+        out.append(sphere('focinho_gato', (sx * 0.047, -0.078, -R * 0.96), (0.067, 0.048, 0.045), cream))
+        for k in range(3):
+            out.append(tube('bigode_gato', [(sx * 0.095, -0.075 - k * 0.015, -R * 1.04),
+                            (sx * 0.18, -0.065 - k * 0.021, -R * 1.01), (sx * 0.285, -0.045 - k * 0.03, -R * 0.92)],
+                            [0.0035, 0.003, 0.001], ink, sides=6))
+        out.append(tube('sorriso_gato', [(0, -0.085, -R * 1.16), (sx * 0.024, -0.112, -R * 1.12),
+                        (sx * 0.052, -0.105, -R * 1.09)], 0.004, ink, sides=6))
+    out.append(sphere('nariz_gato', (0, -0.049, -R * 1.13), (0.028, 0.019, 0.017), pink))
+    # Três marcas curtas no topo, sem cobrir os olhos.
+    for x in (-0.06, 0, 0.06):
+        out.append(tube('marca_pelo', [(x, 0.11, -0.205), (x * 0.8, 0.145, -0.181), (x * 0.7, 0.17, -0.15)],
+                        [0.007, 0.011, 0.003], ink, sides=6))
+    return out
+
+
+def sardinha_torso(s):
+    fish = mat('sardinha_peixe', '#ffb44a', rough=0.85)
+    fin = mat('sardinha_barbatana', '#e98732', rough=0.85)
+    ink = mat('sardinha_estampa_tinta', '#263e50', rough=0.9)
+    out = [applique('peixe_corpo', [(0.025 + 0.095 * math.cos(k * math.pi / 12), 0.41 + 0.049 * math.sin(k * math.pi / 12))
+                                 for k in range(24)], fish),
+           applique('peixe_cauda', [(-0.065, 0.41), (-0.135, 0.459), (-0.135, 0.361)], fish),
+           applique('peixe_barbatana', [(-0.015, 0.449), (0.025, 0.493), (0.065, 0.449)], fin)]
+    out.append(sphere('peixe_olho', (0.082, 0.423, -0.214), (0.009, 0.009, 0.005), ink, segments=12, rings=8))
+    out.append(tube('peixe_guelra', [(0.055, 0.435, -0.224), (0.045, 0.411, -0.227), (0.055, 0.388, -0.224)], 0.003, ink, sides=6))
+    fur = mat('sardinha_pele', SKIN_TONES['sardinha'])
+    tail = [Vector(p) for p in [(0, 0.08, 0.20), (0.18, 0.13, 0.31), (0.34, 0.29, 0.27),
+                              (0.40, 0.49, 0.22), (0.37, 0.64, 0.17), (0.29, 0.67, 0.14)]]
+    smooth_tail = []
+    for i in range(len(tail) - 1):
+        a, b, c, d = tail[max(0, i - 1)], tail[i], tail[i + 1], tail[min(len(tail) - 1, i + 2)]
+        for k in range(6):
+            t = k / 6
+            smooth_tail.append(tuple(0.5 * ((2 * b) + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t * t
+                                          + (-a + 3 * b - 3 * c + d) * t * t * t)))
+    smooth_tail.append(tuple(tail[-1]))
+    out.append(tube('cauda_gato', smooth_tail, [0.037 - 0.019 * (i / (len(smooth_tail) - 1)) ** 2
+                                             for i in range(len(smooth_tail))], fur, sides=12))
+    out.append(sphere('cauda_ponta', tuple(tail[-1]), (0.018, 0.018, 0.018), fur, segments=12, rings=8))
+    return out
+
+
+build('sardinha', shirt=('#197d83', 0.9), pants='#344b61', shoe='#84929d', extras_torso=sardinha_torso,
+      extras_head=sardinha_head, eye_color='#b6c953', feline=True, lips='#3a4650')
+
+# ======================================================================== Gordo do Fusca
+def fusca_head(R, skin):
+    hair = mat('fusca_cabelo', '#241a16', rough=0.95)
+    curl = mat('fusca_cachos', '#33241c', rough=1.0)
+    out = [sphere('black_power_volume', (0, 0.205, 0.065), (0.325, 0.29, 0.27), hair, segments=28, rings=20)]
+    # Cachos distribuídos deterministicamente pela superfície, sem cobrir o rosto.
+    for k in range(180):
+        y = 1 - 2 * (k + 0.5) / 180
+        a = k * math.pi * (3 - math.sqrt(5))
+        r = math.sqrt(1 - y * y)
+        x, z = r * math.cos(a), r * math.sin(a)
+        if y < -0.15 and z < -0.25:
+            continue
+        size = 0.033 + 0.004 * math.sin(k * 2.3)
+        out.append(sphere('cacho', (x * 0.322, 0.205 + y * 0.285, 0.065 + z * 0.267),
+                          (size, size * 0.9, size), curl if k % 4 == 0 else hair, segments=10, rings=8))
+    return out
+
+
+def fusca_torso(s):
+    yellow = mat('fusca_estampa', '#f2c45b', rough=0.9)
+    window = mat('fusca_janelas', '#344f57', rough=0.9)
+    tire = mat('fusca_pneus', '#302c29', rough=1.0)
+    cream = mat('fusca_detalhes', '#f7ead0', rough=0.9)
+    radius = 0.214 * s
+    # Silhueta original de um carro antigo arredondado, sem emblemas ou logotipos.
+    out = [applique('fusca_carro', [(-0.21, 0.29), (-0.21, 0.32), (-0.19, 0.346), (-0.15, 0.36),
+                    (-0.128, 0.388), (-0.105, 0.415), (-0.075, 0.437), (-0.04, 0.449), (0, 0.451),
+                    (0.035, 0.443), (0.066, 0.426), (0.092, 0.40), (0.116, 0.365), (0.16, 0.355),
+                    (0.192, 0.339), (0.207, 0.318), (0.21, 0.30), (0.20, 0.28), (-0.19, 0.28)], yellow, radius)]
+    for outline in [[(-0.112, 0.365), (-0.092, 0.403), (-0.068, 0.425), (-0.04, 0.433), (-0.023, 0.433), (-0.023, 0.365)],
+                    [(-0.006, 0.365), (-0.006, 0.434), (0.028, 0.425), (0.053, 0.407), (0.082, 0.365)]]:
+        out.append(applique('fusca_janela', outline, window, radius + 0.003))
+    for x in (-0.13, 0.135):
+        out.append(applique('fusca_paralama', [(x + 0.059 * math.cos(k * math.pi / 16), 0.291 + 0.06 * math.sin(k * math.pi / 16))
+                                             for k in range(17)], cream, radius + 0.002))
+        for name, rad, m, offset in [('pneu', 0.042, tire, 0.004), ('calota', 0.023, cream, 0.006)]:
+            out.append(applique('fusca_' + name, [(x + rad * math.cos(k * math.pi / 12), 0.287 + rad * math.sin(k * math.pi / 12))
+                                                 for k in range(24)], m, radius + offset))
+    out.append(applique('fusca_farol', [(0.183, 0.317), (0.202, 0.313), (0.197, 0.332), (0.18, 0.339)], cream, radius + 0.004))
+    out.append(torus('gola_camiseta', (0, 0.625, 0), 0.077, 0.014, cream))
+    return out
+
+
+build('gordodofusca', shirt=('#b9502e', 0.95), pants='#304b63', shoe='#eee3cb', body_scale=1.45,
+      extras_torso=fusca_torso, extras_head=fusca_head, eye_color='#69452e', brow='#241a16', lips='#79452f', teeth=True)
+
+# ======================================================================== Tiba
+def shirt_text(name, text, y, size, material, radius=0.218):
+    """Letras em malha apoiadas na curvatura da camisa, usando a fonte interna do Blender."""
+    curve = bpy.data.curves.new(name, 'FONT')
+    curve.body, curve.size, curve.align_x = text, size, 'CENTER'
+    curve.offset = 0.0007
+    curve.resolution_u = 4
+    obj = bpy.data.objects.new(name, curve)
+    bpy.context.collection.objects.link(obj)
+    bpy.ops.object.select_all(action='DESELECT')
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    bpy.ops.object.convert(target='MESH')
+    obj = bpy.context.object
+    for v in obj.data.vertices:
+        # A frente do personagem olha para -z: inverte x para a leitura não ficar espelhada.
+        x, h = -v.co.x, v.co.y + y
+        v.co = P(x, h, -math.sqrt(max(0.001, radius * radius - x * x)) - 0.009)
+    obj.data.materials.append(material)
+    paint(obj, (1, 1, 1))
+    return obj
+
+
+def tiba_torso(s):
+    black = mat('tiba_preto', '#202126', rough=0.9)
+    white = mat('tiba_branco', '#f5f2e9', rough=0.9)
+    red = mat('tiba_escudo_vermelho', '#c63434', rough=0.85)
+    out = [torus('gola_alvinegra', (0, 0.625, 0), 0.077, 0.017, black),
+           shirt_text('nome_time', 'CORINTHIANS', 0.29, 0.045, black),
+           shirt_text('nome_torcedor', 'TIBA', 0.21, 0.033, black)]
+    # Escudo estilizado modelado aqui: âncora, remos, anel e bandeira em preto/branco/vermelho.
+    # Pedido explícito de camisa do Corinthians; não usa imagens, patrocínios ou uniformes baixados.
+    cx, cy = -0.087, 0.43
+    for sx in (-1, 1):
+        out.append(applique('remo', [(cx + sx * 0.040, cy + 0.060), (cx + sx * 0.049, cy + 0.054),
+                        (cx - sx * 0.041, cy - 0.059), (cx - sx * 0.049, cy - 0.053)], red, 0.219))
+    out.append(applique('ancora_haste', [(cx - 0.004, cy - 0.066), (cx + 0.004, cy - 0.066),
+                                       (cx + 0.004, cy + 0.067), (cx - 0.004, cy + 0.067)], red, 0.220))
+    for sx in (-1, 1):
+        out.append(applique('ancora_braco', [(cx, cy - 0.061), (cx + sx * 0.043, cy - 0.038),
+                            (cx + sx * 0.045, cy - 0.024), (cx + sx * 0.035, cy - 0.036), (cx, cy - 0.052)], red, 0.221))
+    for name, r, m, depth in [('anel', 0.045, black, 0.223), ('centro', 0.034, white, 0.225)]:
+        out.append(applique('escudo_' + name, [(cx + r * math.cos(k * math.pi / 16), cy + r * math.sin(k * math.pi / 16))
+                                             for k in range(32)], m, depth))
+    for j in range(3):
+        y = cy - 0.021 + j * 0.015
+        out.append(applique('bandeira_faixa', [(cx - 0.024, y), (cx + 0.024, y), (cx + 0.024, y + 0.006), (cx - 0.024, y + 0.006)], black, 0.227))
+    out.append(applique('bandeira_canto', [(cx - 0.024, cy), (cx - 0.004, cy), (cx - 0.004, cy + 0.021), (cx - 0.024, cy + 0.021)], red, 0.229))
+    return out
+
+
+def tiba_head(R, skin):
+    hair = mat('tiba_cabelo', '#29221e', rough=0.9)
+    out = [sphere('cabelo_curto', (0, 0.12, 0.04), (R * 1.025, R * 0.65, R * 0.95), hair)]
+    for k in range(5):
+        out.append(sphere('topete', (-0.11 + k * 0.048, 0.205 + k * 0.005, -0.085), (0.054, 0.066, 0.075), hair,
+                          rot=(0, 0, -0.25), segments=16, rings=12))
+    for sx in (-1, 1):
+        for k, color in enumerate(['#202126', '#f5f2e9']):
+            out.append(tube('pintura_torcida', [(sx * 0.115, -0.065 - k * 0.021, -0.210),
+                            (sx * 0.15, -0.06 - k * 0.021, -0.188), (sx * 0.171, -0.054 - k * 0.021, -0.166)],
+                            0.008, mat('tiba_pintura_' + str(k), color), sides=6))
+    return out
+
+
+build('tiba', shirt=('#f5f2e9', 0.9), pants='#282b30', shoe='#f5f2e9', short_sleeves=True,
+      extras_torso=tiba_torso, extras_head=tiba_head, eye_color='#80552e', brow='#29221e', lips='#8f4d37', teeth=True)
+
+# ======================================================================== Negon
+def negon_head(R, skin):
+    hair = mat('negon_cabelo', '#211a17', rough=0.96)
+    out = [sphere('cabelo_rente', (0, 0.165, 0.025), (R * 1.01, R * 0.52, R * 0.94), hair, segments=32, rings=20)]
+    for k in range(65):
+        y = (k + 0.5) / 65
+        a = k * math.pi * (3 - math.sqrt(5))
+        r = math.sqrt(1 - y * y)
+        out.append(sphere('cacho_curto', (r * math.cos(a) * R, 0.165 + y * R * 0.51, 0.025 + r * math.sin(a) * R * 0.94),
+                          (0.021, 0.017, 0.021), hair, segments=8, rings=6))
+    mouth = mat('negon_sorriso', '#301b16', rough=0.8)
+    teeth = mat('negon_dentes', '#fff8e8', rough=0.45)
+    steel = mat('negon_aparelho', '#667e8e', rough=0.45, metal=0.35)
+    elastic = mat('negon_elastico', '#447fc7', rough=0.65)
+    out.append(sphere('sorriso_aberto', (0, -0.106, -R * 0.94), (0.097, 0.045, 0.024), mouth))
+    out.append(sphere('dentes_sorriso', (0, -0.098, -R * 0.98), (0.079, 0.027, 0.015), teeth))
+    # Aparelho com fio contínuo e cinco bráquetes metálicos, legível no retrato e de perto.
+    wire = []
+    for k in range(9):
+        x = -0.072 + k * 0.018
+        wire.append((x, -0.109 + 0.014 * (x / 0.072) ** 2, -R * 0.98 - 0.017 + 0.009 * (x / 0.072) ** 2))
+    out.append(tube('fio_aparelho', wire, 0.0028, steel, sides=8))
+    for x in (-0.054, -0.027, 0, 0.027, 0.054):
+        y = -0.109 + 0.014 * (x / 0.072) ** 2
+        z = -R * 0.98 - 0.02 + 0.009 * (x / 0.072) ** 2
+        out.append(box('elastico_aparelho', (x, y, z), (0.019, 0.020, 0.007), elastic, bevel=0.003, segments=2))
+        out.append(box('braquete', (x, y, z - 0.005), (0.011, 0.013, 0.006), steel, bevel=0.002, segments=2))
+    return out
+
+
+def negon_torso(s):
+    trim = mat('negon_gola', '#f2c14e', rough=0.85)
+    return [torus('gola_dourada', (0, 0.625, 0), 0.071, 0.013, trim)]
+
+
+build('negon', shirt=('#396bbb', 0.85), pants='#273c57', shoe='#eee5ce', body_scale=0.76,
+      extras_torso=negon_torso, extras_head=negon_head, eye_color='#8b5c31', brow='#211a17', lips='#43291f')
+
 # ---------------------------------------------------------------- exportação
 for o in parts:
     o.data.color_attributes.active_color = o.data.color_attributes['Col']
@@ -361,13 +724,14 @@ export(OUT, parts)
 tris = sum(len(p.vertices) - 2 for o in parts for p in o.data.polygons)
 print(f'PERSONAGENS: {OUT} ({os.path.getsize(OUT) / 1e6:.2f} MB, {tris} triângulos, {len(parts)} peças)')
 
-# Prévia: os quatro lado a lado, montados como no jogo (de pé), para conferir sem abrir o navegador.
+# Prévia lado a lado. `--personagens luistesoura,sardinha` seleciona o elenco mostrado no render.
 argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
 if '--previa' in argv:
     path = argv[argv.index('--previa') + 1]
     sc = bpy.context.scene
-    for i, cid in enumerate(HEAD_R):
-        x0 = (i - 1.5) * 0.9
+    preview_ids = argv[argv.index('--personagens') + 1].split(',') if '--personagens' in argv else list(HEAD_R)
+    for i, cid in enumerate(preview_ids):
+        x0 = (i - (len(preview_ids) - 1) / 2) * 0.95
         R = HEAD_R[cid]
 
         def place(name, at):
@@ -378,19 +742,25 @@ if '--previa' in argv:
 
         place('tronco', (0, 0.93, 0))
         place('cabeca', (0, 0.93 + 0.62 + R, 0))
-        place('olhos', (0, 0.93 + 0.62 + R + 0.04, -R + 0.03))
+        for facial in ('sobrancelhas', 'boca', 'nariz'):
+            place(facial, (0, 0.93 + 0.62 + R, 0))
+        for eye in ('olho_esq', 'olho_dir'):
+            place(eye, (0, 0.93 + 0.62 + R + 0.04, -R + 0.03))
         for sx in (-1, 1):
-            place('braco', (sx * 0.27, 0.93 + 0.55, 0))
-            place('coxa', (sx * 0.11, 0.93, 0))
-            place('canela', (sx * 0.11, 0.93 - 0.42, 0))
+            shoulder = 0.35 if cid == 'gordodofusca' else 0.23 if cid == 'negon' else 0.27
+            hip = 0.14 if cid == 'gordodofusca' else 0.09 if cid == 'negon' else 0.11
+            place('braco', (sx * shoulder, 0.93 + 0.55, 0))
+            place('coxa', (sx * hip, 0.93, 0))
+            place('canela', (sx * hip, 0.93 - 0.42, 0))
     for o in parts:
         o.hide_render = True
     cam_data = bpy.data.cameras.new('cam')
-    cam_data.lens = 32
+    cam_data.type = 'ORTHO'
+    cam_data.ortho_scale = max(3.6, len(preview_ids) * 1.0)
     cam = bpy.data.objects.new('cam', cam_data)
     sc.collection.objects.link(cam)
-    cam.location = P(0.3, 1.35, -4.6)
-    target = P(0, 1.0, 0)
+    cam.location = P(0.15, 1.5, -5.5)
+    target = P(0, 1.1, 0)
     # O render do Blender só mostra a cor por vértice se o material a ler (o glTF a exporta de qualquer jeito).
     for m in bpy.data.materials:
         if not m.use_nodes:
@@ -419,7 +789,7 @@ if '--previa' in argv:
     sc.world.color = (0.25, 0.2, 0.17)
     sc.render.engine = 'CYCLES'
     sc.cycles.samples = 24
-    sc.render.resolution_x, sc.render.resolution_y = 1100, 620
+    sc.render.resolution_x, sc.render.resolution_y = 1200, 860
     sc.render.filepath = path
     bpy.ops.render.render(write_still=True)
     print('PREVIA:', path)

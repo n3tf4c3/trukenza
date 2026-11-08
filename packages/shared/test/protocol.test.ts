@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CHARACTER_IDS,
   normalizeRoomCode,
   parseCharacter,
   parseCharacterMessage,
@@ -22,7 +23,10 @@ describe('validação do que vem da rede', () => {
   });
 
   it('personagem, cadeira, pronto e tamanho da mesa', () => {
-    expect(parseCharacter('baiaca')).toBe('baiaca');
+    for (const character of CHARACTER_IDS) {
+      expect(parseCharacter(character)).toBe(character);
+      expect(parseCharacterMessage({ character })).toBe(character);
+    }
     expect(parseCharacter('outro')).toBeNull();
     expect(parseCharacterMessage({ character: 'neymt' })).toBe('neymt');
     expect(parseCharacterMessage('neymt')).toBeNull();

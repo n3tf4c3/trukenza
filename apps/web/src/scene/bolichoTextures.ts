@@ -56,15 +56,15 @@ function grain(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: 
   g.beginPath();
   g.rect(x, y, w, h);
   g.clip();
-  const lines = 6 + Math.floor(rnd() * 6);
+  const lines = 12 + Math.floor(rnd() * 10);
   for (let i = 0; i < lines; i++) {
     const yy = y + rnd() * h;
     const amp = 1 + rnd() * h * 0.12;
     const freq = 0.004 + rnd() * 0.01;
     const phase = rnd() * 10;
     g.strokeStyle = relief ? gray(95 + rnd() * 30) : dark;
-    g.globalAlpha = relief ? 0.5 : 0.1 + rnd() * 0.16;
-    g.lineWidth = 0.6 + rnd() * 1.8;
+    g.globalAlpha = relief ? 0.3 : 0.06 + rnd() * 0.10;
+    g.lineWidth = 0.35 + rnd() * 0.9;
     g.beginPath();
     for (let xx = x; xx <= x + w; xx += 6) g.lineTo(xx, yy + Math.sin(xx * freq + phase) * amp);
     g.stroke();
@@ -136,12 +136,12 @@ function blotches(g: CanvasRenderingContext2D, s: number, rnd: () => number, cou
  */
 export const whitewashMaps = () =>
   surface('parede', 512, 1.5, 23, (g, s, relief, rnd) => {
-    const rows = 22;
+    const rows = 12;
     const bh = s / rows;
     const bw = bh * 3.8;
     g.fillStyle = relief ? gray(170) : '#ffffff';
     g.fillRect(0, 0, s, s);
-    blotches(g, s, rnd, 40, () => (relief ? gray(120) : `rgb(${220 + rnd() * 20 | 0},${206 + rnd() * 20 | 0},${180 + rnd() * 20 | 0})`), relief ? 0.5 : 0.35, s * 0.12);
+    blotches(g, s, rnd, 18, () => (relief ? gray(145) : `rgb(${225 + rnd() * 15 | 0},${218 + rnd() * 15 | 0},${202 + rnd() * 15 | 0})`), relief ? 0.3 : 0.18, s * 0.18);
     // Junta das fiadas: no relevo sempre, na cor só de leve.
     for (let row = 0; row < rows; row++) {
       const y = row * bh + (rnd() - 0.5) * 1.5;
@@ -235,17 +235,17 @@ export const woodMaps = () =>
   });
 
 /** Tampo da mesa de truco: tábuas largas coladas, verniz gasto no meio. */
-export const tableTopMaps = () =>
-  surface('tampo', 1024, 3.0, 61, (g, s, relief, rnd) => {
-    const n = 10;
+export function tableTopMaps(): SurfaceMaps {
+  const maps = surface('tampo', 1024, 3.0, 61, (g, s, relief, rnd) => {
+    const n = 7;
     const w = s / n;
     for (let i = 0; i < n; i++) {
-      const t = 0.88 + rnd() * 0.15;
+      const t = 0.93 + rnd() * 0.07;
       g.fillStyle = relief ? gray(200) : `rgb(${255 * t | 0},${240 * t | 0},${222 * t | 0})`;
       g.fillRect(0, i * w, s, w);
       grain(g, 0, i * w, s, w, rnd, relief, '#4a2a14');
-      g.fillStyle = relief ? gray(70) : 'rgba(40,22,10,0.55)';
-      g.fillRect(0, i * w, s, 2);
+      g.fillStyle = relief ? gray(110) : 'rgba(60,47,34,0.28)';
+      g.fillRect(0, i * w, s, 1.5);
     }
     if (!relief) {
       // Gasto das mãos e das cartas no centro.
@@ -255,7 +255,25 @@ export const tableTopMaps = () =>
       g.fillStyle = r;
       g.fillRect(0, 0, s, s);
     }
+    // Riscos finos do uso e marcas discretas de copos. A madeira continua sendo protagonista.
+    for (let i = 0; i < 32; i++) {
+      const x = rnd() * s;
+      const y = rnd() * s;
+      g.strokeStyle = relief ? 'rgba(70,70,70,0.25)' : 'rgba(63,38,21,0.12)';
+      g.lineWidth = 0.5 + rnd() * 0.5;
+      g.beginPath(); g.moveTo(x, y); g.lineTo(x + 6 + rnd() * 30, y + rnd() * 3); g.stroke();
+    }
+    for (const [x, y] of [[0.19, 0.24], [0.77, 0.68], [0.26, 0.83]]) {
+      g.strokeStyle = relief ? 'rgba(120,120,120,0.12)' : 'rgba(75,42,20,0.12)';
+      g.lineWidth = 2;
+      g.beginPath(); g.arc(x! * s, y! * s, s * 0.028, 0.2, 5.7); g.stroke();
+    }
   });
+  // UV em metros centrado na origem: a emenda fica na borda do tampo, não no meio da mesa.
+  maps.map.offset.set(0.5, 0.5);
+  maps.bump.offset.set(0.5, 0.5);
+  return maps;
+}
 
 /** Palha trançada do assento. */
 export const strawMaps = () =>

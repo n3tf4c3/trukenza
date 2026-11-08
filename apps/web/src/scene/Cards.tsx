@@ -3,9 +3,10 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { Hud, PerspectiveCamera } from '@react-three/drei';
 import * as THREE from 'three';
 import { cardId, type Card } from '@trukenza/game-engine';
-import type { CameraMode } from '../store';
+import { useStore, type CameraMode } from '../store';
 import { cardBackTexture, cardFaceTexture } from './textures';
 import { DRAG_PX } from './freeCamera';
+import { CARD_THICKNESS } from './layout';
 
 const ASPECT = 1.5;
 
@@ -13,20 +14,22 @@ const ASPECT = 1.5;
  * Carta de duas faces: a frente olha para +z, o verso para -z. `flat`: a frente ignora a luz e mostra as
  * cores exatas do desenho (cartas jogadas na mesa, que debaixo do lampião ficariam lavadas).
  */
-export function CardMesh({ card, width, flat = false }: { card: Card | null; width: number; flat?: boolean }) {
+export function CardMesh({ card, width, flat = false, overlay = false, order = 0 }: { card: Card | null; width: number; flat?: boolean; overlay?: boolean; order?: number }) {
   const front = useMemo(() => (card ? cardFaceTexture(card) : cardBackTexture()), [card]);
   const back = useMemo(() => cardBackTexture(), []);
   const h = width * ASPECT;
   return (
     <group>
-      <mesh castShadow>
+      <mesh castShadow={!overlay} position-z={CARD_THICKNESS / 2} renderOrder={order}>
         <planeGeometry args={[width, h]} />
-        {flat ? <meshBasicMaterial map={front} toneMapped={false} /> : <meshStandardMaterial map={front} roughness={0.6} />}
+        {flat || overlay
+          ? <meshBasicMaterial map={front} alphaTest={0.5} toneMapped={false} depthTest={!overlay} depthWrite={!overlay} />
+          : <meshStandardMaterial map={front} alphaTest={0.5} roughness={0.85} />}
       </mesh>
-      <mesh rotation-y={Math.PI}>
+      {!overlay && <mesh rotation-y={Math.PI} position-z={-CARD_THICKNESS / 2}>
         <planeGeometry args={[width, h]} />
-        <meshStandardMaterial map={back} roughness={0.6} />
-      </mesh>
+        <meshStandardMaterial map={back} alphaTest={0.5} roughness={0.85} />
+      </mesh>}
     </group>
   );
 }
@@ -73,6 +76,7 @@ export function HeldCards({ hand, handKey, faceUp }: { hand: Card[] | number; ha
 }
 
 function HandCard({ card, index, count, size, lift, playable, onPlay }: { card: Card; index: number; count: number; size: number; lift: number; playable: boolean; onPlay: (card: Card) => void }) {
+  const selected = useStore(s => s.selectedCard?.id === cardId(card) && s.selectedCard.version === s.handVersion);
   const ref = useRef<THREE.Group>(null);
   const [hover, setHover] = useState(false);
   const born = useRef(-1);
@@ -86,7 +90,8 @@ function HandCard({ card, index, count, size, lift, playable, onPlay }: { card: 
     // Distribuição: cada carta sobe da borda da tela com um pequeno atraso.
     const arrive = THREE.MathUtils.clamp((clock.elapsedTime - born.current - index * 0.15) / 0.35, 0, 1);
     const enter = (1 - (1 - arrive) ** 3) * lift;
-    const up = hover && playable;
+    const up = (hover || selected) && playable;
+    g.position.z = up ? 0.25 : index * 0.01;
     const y = baseY - lift + enter + (up ? size * 0.35 : playable ? size * 0.08 : 0);
     g.position.y = THREE.MathUtils.damp(g.position.y, y, 14, dt);
     const s = up ? 1.12 : 1;
@@ -96,7 +101,7 @@ function HandCard({ card, index, count, size, lift, playable, onPlay }: { card: 
     <group
       ref={ref}
       position={[x, baseY - lift, index * 0.01]}
-      rotation={[-0.12, 0, -k * 0.35]}
+      rotation={[0, 0, -k * 0.35]}
       onPointerOver={(e) => {
         e.stopPropagation();
         setHover(true);
@@ -112,7 +117,12 @@ function HandCard({ card, index, count, size, lift, playable, onPlay }: { card: 
         if (playable && e.delta <= DRAG_PX) onPlay(card);
       }}
     >
-      <CardMesh card={card} width={size} />
+      {/* Ordem explícita: as cartas do leque se cruzavam em profundidade ao inclinar/levantar. */}
+      {selected && playable && <mesh position-z={-0.001} renderOrder={19}>
+        <planeGeometry args={[size * 1.08, size * ASPECT * 1.06]} />
+        <meshBasicMaterial color="#ffd166" toneMapped={false} depthTest={false} depthWrite={false} />
+      </mesh>}
+      <CardMesh card={card} width={size} overlay order={(hover || selected) && playable ? 20 : index + 1} />
     </group>
   );
 }
@@ -150,7 +160,7 @@ function HandLayout({ hand, mode, playable, onPlay }: { hand: Card[]; mode: Came
   const width = (height * size.width) / size.height;
   const px = height / size.height;
   // Sempre no centro de baixo; de perto, maior.
-  const cardW = Math.min(mode === 'cartas' ? height * 0.2 : height * 0.16, width / (mode === 'cartas' ? 4.4 : 5.5));
+  const cardW = Math.min(mode === 'cartas' ? height * 0.155 : height * 0.14, width / (mode === 'cartas' ? 4.8 : 5.5));
   const h = cardW * ASPECT;
   const actions = useActionsHeight();
   const bottom = size.width >= WIDE_PX ? BOTTOM_WIDE_PX : actions + 20;
@@ -174,7 +184,7 @@ function HandLayout({ hand, mode, playable, onPlay }: { hand: Card[]; mode: Came
 }
 
 /** A mão do próprio jogador, desenhada por cima da cena (sempre legível, sem bater na mesa). */
-/** Na sua vez, as cartas que pode jogar ficam um pouco levantadas; um clique joga. */
+/** Na sua vez, um clique seleciona; o painel confirma a jogada. */
 export function HandHud({
   hand,
   handKey,

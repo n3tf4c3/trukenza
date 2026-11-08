@@ -23,10 +23,13 @@ const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
  */
 const THIRD_STANDING: Frame = { eye: v(0.45, 2.2, 2.1), look: v(0, 0.9, -3.0) };
 // Alta o bastante para as cartas no centro da mesa não ficarem achatadas (inclinação de ~28°).
-const THIRD_SEATED: Frame = { eye: v(0.42, 2.45, 0.95), look: v(-0.05, 0.8, -1.8) };
+const THIRD_SEATED: Frame = { eye: v(0.55, 2.65, 1.25), look: v(-0.05, 0.88, -1.8) };
 const THIRD_SEATED_PORTRAIT: Frame = { eye: v(0.35, 3.0, 1.85), look: v(0, 0.78, -2.1) };
 // De perto: debruçado sobre a mesa, olhando o centro de cima.
-const CLOSE_UP: Frame = { eye: v(0, 1.7, -0.45), look: v(0, 0.78, -1.85) };
+const CLOSE_UP: Frame = { eye: v(0, 1.95, 0.05), look: v(0, 1.10, -2.0) };
+const CLOSE_UP_PORTRAIT: Frame = { eye: v(0, 2.65, 0.8), look: v(0, 0.9, -2.0) };
+/** Plano aberto para apreciar os destinos, com a mesa ainda ao alcance do jogador. */
+const PANORAMA: Frame = { eye: v(0, 2.15, 0.8), look: v(0, 1.65, -3) };
 
 /** Antes de o próprio personagem existir na cena: um plano de entrada, na altura das pessoas. */
 const ENTRY: Frame = { eye: v(1.2, 2.2, 5.2), look: v(-0.5, 0.9, 0) };
@@ -124,13 +127,14 @@ export function CameraRig({ mode }: { mode: CameraMode }) {
     let eye: THREE.Vector3;
     let target: THREE.Vector3;
     const closeUp = mode === 'cartas' && localAvatar.sit > 0.9;
+    const panorama = mode === 'panorama' && localAvatar.sit > 0.9;
     if (!localAvatar.ready) {
       eye = ENTRY.eye.clone();
       target = ENTRY.look.clone();
     } else {
       // Sentar aproxima a câmera aos poucos, junto com o corpo.
       const seated = portrait ? THIRD_SEATED_PORTRAIT : THIRD_SEATED;
-      const f = closeUp ? CLOSE_UP : lerpFrame(THIRD_STANDING, seated, localAvatar.sit);
+      const f = panorama ? PANORAMA : closeUp ? (portrait ? CLOSE_UP_PORTRAIT : CLOSE_UP) : lerpFrame(THIRD_STANDING, seated, localAvatar.sit);
       // De perto, um leve deslocamento com o ponteiro dá profundidade sem tirar o controle de quem joga.
       const local = closeUp ? f.eye.clone().add(v(pointer.x * 0.04, pointer.y * 0.02, 0)) : f.eye.clone();
       eye = local.applyAxisAngle(UP, localAvatar.rot).add(localAvatar.pos);
@@ -150,7 +154,7 @@ export function CameraRig({ mode }: { mode: CameraMode }) {
     camera.position.lerp(eye, k);
     look.current.lerp(target, k);
     camera.lookAt(look.current);
-    const fov = portrait ? 68 : closeUp ? 62 : 56;
+    const fov = portrait ? 68 : panorama ? 68 : closeUp ? 62 : 56;
     if (Math.abs(camera.fov - fov) > 0.05) {
       camera.fov = THREE.MathUtils.damp(camera.fov, fov, 3, dt);
       camera.updateProjectionMatrix();

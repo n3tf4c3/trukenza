@@ -1,6 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { SCENERIES } from '@trukenza/shared';
+import { setScenery } from '../net';
+import { SceneryPicker } from './Cenarios';
 import { CHARACTERS, PHASE_PLAYING, PHASE_WAITING, REFUSAL_TEXT, SEAT_FREE, SEAT_TAKEN, teamOf } from '@trukenza/shared';
-import { addBots, chooseCharacter, endMatch, inviteLink, leaveRoom, removeBot, setReady, setRules, sit, stand, startMatch } from '../net';
+import { addBots, chooseCharacter, inviteLink, leaveRoom, removeBot, setReady, setRules, sit, stand, startMatch } from '../net';
 import { TEAM_COLORS, teamOfSeat } from '../game';
 import { FimDePartida, Gritos, Historico, Jogadas, NaMesa, Placar, Vez } from './Partida';
 import { RulesPicker, rulesSummary } from './Regras';
@@ -9,6 +12,10 @@ import { CharacterPicker } from './Lobby';
 import { Portrait } from './Portrait';
 import { ControleSom, SomDaMesa } from './Som';
 import { resetFreeCamera } from '../scene/freeCamera';
+import { Sinais } from './Sinais';
+import { EncerrarPartida } from './EncerrarPartida';
+import { Ajuda } from './Ajuda';
+import { ControlesCartas, DicasContextuais, OpcoesDicas, ResumoMao } from './Experiencia';
 
 /** O que ainda falta para começar, do jeito que o servidor confere (Table.startProblem). */
 function startHint(table: TableView): string | null {
@@ -26,7 +33,8 @@ export function MesaHud() {
   const playing = table.phase === PHASE_PLAYING && game !== null;
   const [picking, setPicking] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [panelOpen, setPanelOpen] = useState(() => window.innerWidth > 900);
+  const [panelOpen, setPanelOpen] = useState(() => !playing && window.innerWidth > 900);
+  useEffect(() => setPanelOpen(!playing && window.innerWidth > 900), [playing]);
   const isHost = me?.id === table.hostId;
   const waiting = table.phase === PHASE_WAITING;
   const seated = (me?.seat ?? -1) >= 0;
@@ -56,18 +64,46 @@ export function MesaHud() {
           {copied ? 'Link copiado!' : 'Copiar convite'}
         </button>
         <span className="espaco" />
-        <ControleSom />
-        <button type="button" aria-pressed={quality === 'alta'} onClick={() => setQuality(quality === 'alta' ? 'baixa' : 'alta')} title="Sombras e resolução">
-          Gráficos: {quality}
-        </button>
-        <button type="button" onClick={leaveRoom}>
-          Sair
-        </button>
+        <Ajuda />
+        {waiting && isHost ? <details className="cenario-controle">
+          <summary>Cenário: {SCENERIES[table.scenery].name}</summary>
+          <div className="cenario-painel"><strong>Onde vamos jogar?</strong>
+            <SceneryPicker value={table.scenery} onChange={setScenery} compact />
+            <small>A escolha vale para todos na mesa.</small>
+          </div>
+        </details> : <span className="cenario-atual">{SCENERIES[table.scenery].name}</span>}
+        <details key={playing ? 'jogando' : 'esperando'} className="opcoes-mesa">
+          <summary>Opções</summary>
+          <div className="opcoes-painel">
+            <strong>Som e imagem</strong>
+            <OpcoesDicas />
+            <ControleSom />
+            <button type="button" aria-pressed={quality === 'alta'} onClick={() => setQuality(quality === 'alta' ? 'baixa' : 'alta')} title="Sombras e resolução">
+              Gráficos: {quality}
+            </button>
+            <div className="grupo camera" role="group" aria-label="Câmera">
+              <strong>Câmera</strong>
+              <button type="button" aria-pressed={camera === 'livre'}
+                title="Arraste para girar; roda do mouse ou dois dedos para aproximar; duplo clique volta"
+                onClick={() => (camera === 'livre' ? resetFreeCamera() : setCamera('livre'))}>
+                {camera === 'livre' ? 'Centralizar câmera' : 'Câmera livre'}
+              </button>
+              {seated && <>
+                <button type="button" aria-pressed={camera === 'panorama'} onClick={() => setCamera('panorama')}>Vista panorâmica</button>
+                <button type="button" aria-pressed={camera === 'cartas'} onClick={() => setCamera('cartas')}>Cartas de perto</button>
+              </>}
+            </div>
+            <div className="opcoes-saida">
+              <button type="button" onClick={leaveRoom}>Sair da mesa</button>
+              {playing && isHost && game.winner === null && <EncerrarPartida />}
+            </div>
+          </div>
+        </details>
       </header>
 
       {/* Recolhível: no celular começa fechado para não cobrir a mesa. */}
       <details className="jogadores" open={panelOpen} onToggle={(e) => setPanelOpen(e.currentTarget.open)}>
-        <summary>{table.phase === PHASE_PLAYING ? 'Partida em andamento' : `Na mesa (${seatedCount}/${table.seatCount})`}</summary>
+        <summary>{playing ? 'Jogadores e histórico' : `Na mesa (${seatedCount}/${table.seatCount})`}</summary>
         <ul>
           {table.players.map((p) => (
             <li
@@ -109,6 +145,7 @@ export function MesaHud() {
       </details>
 
       <footer className="acoes">
+        <DicasContextuais />
         {waiting && !seated && (
           <div className="linha">
             <span>Escolha uma cadeira (clique nela):</span>
@@ -158,29 +195,12 @@ export function MesaHud() {
         {playing && (
           <>
             <Vez game={game} table={table} mySeat={mySeat} />
+            {game.winner === null && <ResumoMao game={game} table={table} />}
+            <ControlesCartas />
             {mySeat >= 0 && <Jogadas />}
-            {isHost && game.winner === null && (
-              <button type="button" className="discreto" onClick={endMatch}>
-                Encerrar partida
-              </button>
-            )}
+            <Sinais />
           </>
         )}
-        <div className="grupo camera" role="group" aria-label="Câmera">
-          <button
-            type="button"
-            aria-pressed={camera === 'livre'}
-            title="Arraste para girar; roda do mouse ou dois dedos para aproximar; duplo clique volta"
-            onClick={() => (camera === 'livre' ? resetFreeCamera() : setCamera('livre'))}
-          >
-            {camera === 'livre' ? 'Centralizar câmera' : 'Câmera livre'}
-          </button>
-          {seated && (
-            <button type="button" aria-pressed={camera === 'cartas'} onClick={() => setCamera('cartas')}>
-              Cartas de perto
-            </button>
-          )}
-        </div>
       </footer>
 
       {picking && waiting && (

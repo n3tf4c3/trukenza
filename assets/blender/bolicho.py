@@ -35,13 +35,13 @@ reset()
 
 # Materiais: os nomes são o contrato com o jogo (apps/web/src/scene/bolicho.ts põe as texturas).
 M = {
-    'piso': mat('piso', '#a8774a', rough=0.75),
-    'parede': mat('parede', '#efe6d6', rough=0.95),
-    'tijolo': mat('tijolo', '#b5643f', rough=0.9),
+    'piso': mat('piso', '#88745e', rough=0.85),
+    'parede': mat('parede', '#e5ddca', rough=0.95),
+    'tijolo': mat('tijolo', '#91715b', rough=0.9),
     'forro': mat('forro', '#7a5434', rough=0.85),
-    'madeira': mat('madeira', '#9a6438', rough=0.6),
-    'madeira_escura': mat('madeira_escura', '#5a3620', rough=0.65),
-    'tampo': mat('tampo', '#a8703f', rough=0.75),  # verniz gasto: brilho largo, sem estourar sob o lampião
+    'madeira': mat('madeira', '#84634a', rough=0.72),
+    'madeira_escura': mat('madeira_escura', '#514336', rough=0.75),
+    'tampo': mat('tampo', '#98764f', rough=0.7),  # mel suave: preserva o contraste das cartas
     'ferro': mat('ferro', '#2b2b2e', rough=0.45, metal=0.8),
     'latao': mat('latao', '#c9973f', rough=0.3, metal=0.9),
     'vidro_verde': mat('vidro_verde', '#2f5d2a', rough=0.08),
@@ -358,8 +358,14 @@ for dx in (-0.7, 0.7):
     add(box('banco_pe', (-4.9 + dx, 0.22, -5.5), (0.06, 0.44, 0.34), M['madeira_escura']))
 
 # ---------------------------------------------------------------- mesa de truco
-add(cyl('mesa_tampo', (0, TABLE_TOP - 0.035, 0), TABLE_R, 0.07, M['tampo'], verts=64, bevel=0.02))
+add(cyl('mesa_tampo', (0, TABLE_TOP - 0.045, 0), TABLE_R, 0.09, M['tampo'], verts=96, bevel=0.025, segments=4))
 add(cyl('mesa_saia', (0, TABLE_TOP - 0.13, 0), TABLE_R - 0.12, 0.12, M['madeira_escura'], verts=48))
+# Borda torneada e cavilhas: detalhes de marcenaria abaixo do plano das cartas.
+add(torus('mesa_friso', (0, TABLE_TOP - 0.065, 0), TABLE_R - 0.018, 0.014, M['madeira_escura']))
+for k in range(16):
+    a = k * math.pi / 8
+    add(cyl('mesa_cavilha', (math.cos(a) * 1.40, TABLE_TOP + 0.0003, math.sin(a) * 1.40),
+            0.008, 0.001, M['madeira_escura'], verts=10))
 add(lathe('mesa_coluna', (0, 0.06, 0), [(0.16, 0), (0.2, 0.08), (0.12, 0.2), (0.1, 0.4), (0.13, 0.5), (0.1, 0.56)], M['madeira'], verts=24))
 for k in range(4):  # pés em cruz
     a = k * math.pi / 2 + math.pi / 4
@@ -374,6 +380,23 @@ for k in range(16):
                (0.009, 0.006, 0.006), M['feijao'], segments=8, rings=6))
 for k in range(5):  # feijões já ganhos, do lado de fora
     add(sphere('feijao_ganho', (BX - 0.15 + k * 0.022, TABLE_TOP + 0.006, BZ2 + 0.1), (0.009, 0.006, 0.006), M['feijao'], segments=8, rings=6))
+
+# Pequeno conjunto de cerâmica no aparador, longe da área de jogo.
+for x, z in [(MX - 0.12, MZ - 0.24), (MX + 0.10, MZ + 0.22)]:
+    add(lathe('caneca', (x, 0.73, z), [(0.046, 0), (0.05, 0.01), (0.052, 0.1),
+              (0.047, 0.105), (0.041, 0.095), (0.04, 0.02)], M['rotulo'], verts=24))
+    add(torus('caneca_alca', (x + 0.055, 0.785, z), 0.028, 0.007, M['rotulo'], rot=(math.pi / 2, 0, 0)))
+
+# Relógio de parede no fundo, com aro, marcações e ponteiros em relevo.
+CX, CY, CZ = -4.25, 2.35, -5.91
+add(cyl('relogio_aro', (CX, CY, CZ), 0.29, 0.065, M['madeira_escura'], axis='z', verts=48, bevel=0.012))
+add(cyl('relogio_fundo', (CX, CY, CZ + 0.037), 0.255, 0.012, M['rotulo'], axis='z', verts=48))
+for k in range(12):
+    a = k * math.pi / 6
+    add(sphere('relogio_marca', (CX + math.sin(a) * 0.215, CY + math.cos(a) * 0.215, CZ + 0.05),
+               (0.011, 0.011, 0.004), M['madeira_escura'], segments=8, rings=6))
+add(box('relogio_minuto', (CX, CY + 0.085, CZ + 0.057), (0.012, 0.17, 0.006), M['ferro']))
+add(box('relogio_hora', (CX - 0.06, CY, CZ + 0.063), (0.12, 0.017, 0.006), M['ferro']))
 
 # ---------------------------------------------------------------- lampiões
 LY = 2.35  # base do lampião sobre a mesa (o jogo põe a luz em LAMP_Y)

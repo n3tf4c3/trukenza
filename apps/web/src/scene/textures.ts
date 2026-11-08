@@ -10,12 +10,14 @@ function cached(key: string, draw: (g: CanvasRenderingContext2D, w: number, h: n
   let tex = cache.get(key);
   if (tex) return tex;
   const canvas = document.createElement('canvas');
-  canvas.width = CARD_W;
-  canvas.height = CARD_H;
-  draw(canvas.getContext('2d')!, CARD_W, CARD_H);
+  canvas.width = CARD_W * 2;
+  canvas.height = CARD_H * 2;
+  const g = canvas.getContext('2d')!;
+  g.scale(2, 2);
+  draw(g, CARD_W, CARD_H);
   tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
+  tex.anisotropy = 8;
   cache.set(key, tex);
   return tex;
 }

@@ -1,5 +1,6 @@
 import { CHARACTER_IDS, DEFAULT_CHARACTER, type CharacterId } from './characters.ts';
 import { DEFAULT_RULES, type RoomRules, type SeatCount } from './protocol.ts';
+import { DEFAULT_SCENERY, type SceneryId } from './scenery.ts';
 
 /**
  * A mesa: quem está na sala, quem senta onde, quem está pronto e quem é o anfitrião.
@@ -78,15 +79,26 @@ export function teamOf(seat: number): number {
 export class Table {
   readonly seatCount: SeatCount;
   phase: Phase = PHASE_WAITING;
+  rematchPending = false;
   readonly players = new Map<string, TablePlayer>();
   /** Regras da partida: o anfitrião muda na espera; durante a partida ficam travadas. */
   rules: RoomRules;
+  scenery: SceneryId;
   /** Ordem de chegada: o primeiro é o anfitrião; se ele sair, o seguinte assume. */
   private arrivals: string[] = [];
 
-  constructor(seatCount: SeatCount, rules: RoomRules = DEFAULT_RULES) {
+  constructor(seatCount: SeatCount, rules: RoomRules = DEFAULT_RULES, scenery: SceneryId = DEFAULT_SCENERY) {
     this.seatCount = seatCount;
     this.rules = { ...rules };
+    this.scenery = scenery;
+  }
+
+  setScenery(requester: string, scenery: SceneryId): TableResult {
+    if (!this.players.has(requester)) return 'desconhecido';
+    if (requester !== this.hostId) return 'so-anfitriao';
+    if (this.phase !== PHASE_WAITING) return 'partida-em-andamento';
+    this.scenery = scenery;
+    return 'ok';
   }
 
   setRules(requester: string, rules: RoomRules): TableResult {
@@ -252,10 +264,41 @@ export class Table {
   /** O que ainda impede o começo da partida (sem olhar quem pede); 'ok' se nada. */
   startProblem(): TableResult {
     if (this.phase !== PHASE_WAITING) return 'partida-em-andamento';
+    return this.readinessProblem();
+  }
+
+  private readinessProblem(): TableResult {
     for (let seat = 0; seat < this.seatCount; seat++) {
       if (this.seatStatus(seat) !== SEAT_TAKEN) return 'mesa-incompleta';
     }
     for (const p of this.players.values()) if (p.seat >= 0 && !p.ready) return 'faltam-prontos';
+    return 'ok';
+  }
+
+  /** A sala chama uma vez ao terminar a partida; reconectar não apaga confirmações. */
+  prepareRematch(): void {
+    if (this.phase !== PHASE_PLAYING || this.rematchPending) return;
+    this.rematchPending = true;
+    for (const p of this.players.values()) p.ready = p.bot;
+  }
+
+  setRematchReady(id: string, ready: boolean): TableResult {
+    const p = this.players.get(id);
+    if (!p) return 'desconhecido';
+    if (!this.rematchPending) return 'partida-em-andamento';
+    if (p.seat < 0) return 'nao-sentado';
+    if (!p.connected || !p.settled) return 'nao-chegou';
+    p.ready = p.bot || ready;
+    return 'ok';
+  }
+
+  rematch(id: string): TableResult {
+    if (!this.players.has(id)) return 'desconhecido';
+    if (id !== this.hostId) return 'so-anfitriao';
+    if (!this.rematchPending) return 'partida-em-andamento';
+    const problem = this.readinessProblem();
+    if (problem !== 'ok') return problem;
+    this.rematchPending = false;
     return 'ok';
   }
 
@@ -287,6 +330,7 @@ export class Table {
   }
 
   private backToWaiting(): void {
+    this.rematchPending = false;
     this.phase = PHASE_WAITING;
     // O computador continua pronto; as pessoas confirmam de novo.
     for (const p of this.players.values()) p.ready = p.bot;

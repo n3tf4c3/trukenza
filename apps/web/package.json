@@ -7,7 +7,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "echo \"web: sem testes (regras testadas em @trukenza/shared e @trukenza/game-engine)\""
+    "test": "node --test test/*.test.ts"
   },
   "dependencies": {
     "@colyseus/schema": "^5.0.42",
