@@ -1,44 +1,31 @@
-param([string]$Voice = 'Microsoft Daniel')
+# Gera as falas locais (apps/web/public/vozes/<personagem>.mp3 e falas.json) com o Kokoro-82M (Apache 2.0),
+# num container isolado (scripts/vozes). Frases e elenco vêm de apps/web/src/performance.ts.
+#   pwsh scripts/generate-voices.ps1            # baixa o modelo (~330 MB) numa pasta temporária e apaga no fim
+#   pwsh scripts/generate-voices.ps1 -ManterCache   # guarda o modelo em %TEMP%\trukenza-vozes-cache para a próxima
+param([switch]$ManterCache)
 $ErrorActionPreference = 'Stop'
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $destination = Join-Path $repo 'apps\web\public\vozes'
-New-Item -ItemType Directory -Path $destination -Force | Out-Null
+$work = Join-Path $env:TEMP ('trukenza-vozes-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
+$cache = if ($ManterCache) { Join-Path $env:TEMP 'trukenza-vozes-cache' } else { Join-Path $work 'cache' }
+New-Item -ItemType Directory -Path (Join-Path $work 'entrada'), $cache, $destination -Force | Out-Null
 Push-Location $repo
 try {
-    # O catálogo do jogo é a fonte única das frases. Nenhum arquivo ou processo é criado pelo snippet.
-    $manifest = & node --input-type=module -e "import { SPOKEN } from './apps/web/src/performance.ts'; process.stdout.write(JSON.stringify(SPOKEN));"
+    # O catálogo do jogo é a fonte única das frases. O snippet só imprime JSON; quem grava é este script.
+    $catalog = & node --input-type=module -e "import { VOICE_LINES, VOICE_CAST } from './apps/web/src/performance.ts'; process.stdout.write(JSON.stringify({ lines: VOICE_LINES, cast: VOICE_CAST, challenges: ['truco', 'retruco', 'vale-quatro', 'previa'] }));"
     if ($LASTEXITCODE -ne 0) { throw 'Falha ao ler o catálogo de falas.' }
-    $lines = $manifest | ConvertFrom-Json
-    Add-Type -AssemblyName System.Speech
-    $speaker = [System.Speech.Synthesis.SpeechSynthesizer]::new()
-    try {
-        $speaker.SelectVoice($Voice)
-        $speaker.Rate = 1
-        $format = [System.Speech.AudioFormat.SpeechAudioFormatInfo]::new(22050, [System.Speech.AudioFormat.AudioBitsPerSample]::Sixteen, [System.Speech.AudioFormat.AudioChannel]::Mono)
-        foreach ($line in $lines.PSObject.Properties) {
-            if ($line.Name -notmatch '^[a-z-]+$') { throw 'Nome de fala inválido.' }
-            $file = Join-Path $destination ($line.Name + '.wav')
-            $speaker.SetOutputToWaveFile($file, $format)
-            if ($line.Name -in @('truco', 'retruco', 'vale-quatro', 'previa')) {
-                # O acento fica na chamada, e a provocação vem logo depois, sem uma longa pausa.
-                $parts = ([string]$line.Value) -split '(?<=[!?])\s+'
-                $phrases = foreach ($part in $parts) {
-                    $safe = [System.Security.SecurityElement]::Escape($part)
-                    if ($part -eq 'Vai encarar?') {
-                        '<break time="70ms"/><prosody rate="+8%" pitch="-6%" volume="90">' + $safe + '</prosody>'
-                    } else {
-                        '<prosody rate="-8%" pitch="-8%" volume="100"><emphasis level="strong">' + $safe + '</emphasis></prosody>'
-                    }
-                }
-                $ssml = '<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="pt-BR">' + ($phrases -join '') + '</speak>'
-                $speaker.SpeakSsml($ssml)
-            } else {
-                $speaker.Speak([string]$line.Value)
-            }
-            $speaker.SetOutputToNull()
-            Write-Output ($line.Name + ': ' + (Get-Item -LiteralPath $file).Length + ' bytes')
-        }
-    } finally { $speaker.Dispose() }
-    & node scripts/trim-voices.ts
-    if ($LASTEXITCODE -ne 0) { throw 'Falha ao normalizar as falas.' }
-} finally { Pop-Location }
+    [IO.File]::WriteAllText((Join-Path $work 'entrada\catalogo.json'), $catalog, [Text.UTF8Encoding]::new($false))
+    docker build -q -t trukenza-vozes:local (Join-Path $PSScriptRoot 'vozes') | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Falha ao montar a imagem do gerador.' }
+    Get-ChildItem -LiteralPath $destination -File | Where-Object { $_.Extension -in '.mp3', '.wav', '.json' } | Remove-Item
+    docker run --rm `
+        -v "$(Join-Path $PSScriptRoot 'vozes'):/scripts:ro" `
+        -v "$(Join-Path $work 'entrada'):/entrada:ro" `
+        -v "${destination}:/saida" `
+        -v "${cache}:/cache" `
+        trukenza-vozes:local sh -c "python -I /scripts/gerar.py && python -I /scripts/murmurio.py"
+    if ($LASTEXITCODE -ne 0) { throw 'Falha ao gerar as falas.' }
+} finally {
+    Pop-Location
+    Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+}

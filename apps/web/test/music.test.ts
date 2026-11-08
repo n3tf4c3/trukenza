@@ -41,3 +41,24 @@ test('a afinação da corda acompanha o período da nota e a síntese é reprodu
     assert.ok(Math.abs(best - expected) / expected < 0.012, `nota ${midi}: período ${best}, esperado ${expected}`);
   }
 });
+
+test('a trilha alterna partes, varia o dedilhado e rasga o acorde só com canto em aberto', async () => {
+  const { arrangeBar, nextSection, sectionLength } = await import('../src/music.ts');
+  let seed = 7;
+  const random = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const seen = new Set<string>();
+  let section: 'tema' | 'ponte' | 'respiro' = 'tema';
+  for (let k = 0; k < 12; k++) { seen.add(section); section = nextSection(section, random); }
+  assert.ok(seen.has('ponte') && seen.has('respiro'), 'a trilha não fica presa no tema');
+  for (const s of ['tema', 'ponte', 'respiro'] as const) {
+    for (let bar = 0; bar < sectionLength(s); bar++) for (let variation = 0; variation < 4; variation++) {
+      for (const n of arrangeBar(s, bar, variation, 1, random)) {
+        assert.ok(n.eighth >= 0 && n.eighth < 6 && n.midi >= 40 && n.midi <= 80 && n.gain > 0 && n.gain <= 0.85, `${s}/${bar}`);
+      }
+    }
+  }
+  const calm = arrangeBar('tema', 2, 0, 0, () => 0.9).length;
+  assert.ok(arrangeBar('tema', 2, 0, 1, () => 0.9).length >= calm + 8, 'canto em aberto acrescenta o rasgueado');
+  assert.notDeepEqual(arrangeBar('tema', 2, 0, 0, () => 0.9).map(n => n.midi), arrangeBar('tema', 2, 1, 0, () => 0.9).map(n => n.midi));
+  assert.ok(arrangeBar('respiro', 0, 0, 0, () => 0.9).length <= 2, 'o respiro deixa a mesa quase em silêncio');
+});

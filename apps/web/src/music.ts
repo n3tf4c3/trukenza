@@ -9,6 +9,59 @@ const HARMONY = [
   [43, 55, 59, 62], [47, 54, 57, 63], [40, 55, 59, 64], [40, 52, 55, 59],
 ] as const;
 
+/** Segunda parte, em sol maior: abre a sonoridade antes de voltar ao tema em mi menor. */
+const BRIDGE = [
+  [48, 55, 60, 64], [48, 55, 60, 64], [43, 55, 59, 62], [43, 55, 59, 62],
+  [45, 57, 60, 64], [45, 57, 60, 64], [47, 54, 57, 63], [47, 54, 57, 63],
+] as const;
+
+/** Dedilhados (índices do acorde, uma colcheia cada): a mesma harmonia muda de cara a cada volta. */
+const PATTERNS = [[0, 1, 2, 3, 2, 1], [0, 2, 3, 1, 3, 2], [0, 3, 2, 3, 1, 3], [0, 1, 3, 2, 3, 1]] as const;
+
+export type Section = 'tema' | 'ponte' | 'respiro';
+export interface MusicNote { eighth: number; midi: number; gain: number; pan: number; offset: number }
+
+/** Próxima parte da trilha: o tema volta sempre, a ponte e o respiro se alternam entre as voltas. */
+export function nextSection(previous: Section, random: () => number): Section {
+  if (previous !== 'tema') return 'tema';
+  return random() < 0.55 ? 'ponte' : 'respiro';
+}
+
+export function sectionLength(section: Section): number {
+  return section === 'tema' ? HARMONY.length : section === 'ponte' ? BRIDGE.length * 2 : 8;
+}
+
+/**
+ * Notas de um compasso de 6/8. `tension` (0 a 1) vem da mesa: com um canto em aberto, o violão rasga
+ * o acorde nos tempos fortes. O respiro deixa só o baixo e uma nota aguda, para a trilha não cansar.
+ */
+export function arrangeBar(section: Section, bar: number, variation: number, tension: number, random: () => number): MusicNote[] {
+  const chord = section === 'ponte' ? BRIDGE[bar % BRIDGE.length]! : HARMONY[bar % HARMONY.length]!;
+  const last = bar === sectionLength(section) - 1;
+  const notes: MusicNote[] = [];
+  if (section === 'respiro') {
+    notes.push({ eighth: 0, midi: chord[0]!, gain: 0.7, pan: -0.12, offset: 0 });
+    if (bar % 2 === 0) notes.push({ eighth: 3, midi: chord[3]! + 12, gain: 0.32, pan: 0.3, offset: 0 });
+    return notes;
+  }
+  const pattern = PATTERNS[(variation + (bar % 2)) % PATTERNS.length]!;
+  for (let beat = 0; beat < 6; beat++) {
+    // Uma respiração no fim da frase evita o efeito de metrônomo interminável.
+    if (last && beat > 2) break;
+    notes.push({ eighth: beat, midi: chord[pattern[beat]!]!, gain: beat === 0 ? 0.85 : 0.57 + (beat % 3) * 0.06, pan: beat === 0 ? -0.12 : 0.18, offset: 0 });
+    if (beat === 3 && bar % 2 === 0) notes.push({ eighth: beat, midi: chord[0]!, gain: 0.4, pan: -0.12, offset: 0.018 });
+  }
+  // Uma frase curta lá em cima, de vez em quando.
+  if (!last && random() < 0.3) {
+    const top = chord[3]! + 12;
+    notes.push({ eighth: 2, midi: top, gain: 0.38, pan: 0.32, offset: 0 }, { eighth: 4, midi: chord[2]! + 12, gain: 0.3, pan: 0.32, offset: 0 });
+  }
+  if (tension > 0.05) {
+    for (const beat of [0, 3]) chord.forEach((midi, k) => notes.push({ eighth: beat, midi, gain: 0.32 * tension, pan: 0.05, offset: 0.012 * k }));
+  }
+  return notes;
+}
+
 /** Karplus–Strong: excitação curta seguida de realimentação amortecida da corda. */
 export function pluckedString(midi: number, sampleRate: number): Float32Array<ArrayBuffer> {
   const frequency = 440 * 2 ** ((midi - 69) / 12);
@@ -48,6 +101,9 @@ export class BolichoMusic {
   private playing = false;
   private step = 0;
   private next = 0;
+  private section: Section = 'tema';
+  private variation = 0;
+  private tension = 0;
 
   constructor(context: AudioContext, output: AudioNode) {
     this.context = context;
@@ -70,6 +126,11 @@ export class BolichoMusic {
     this.room.connect(wet).connect(this.bus);
   }
 
+  /** Tensão da mesa (0 a 1): canto em aberto deixa o violão mais rasgado e um pouco mais rápido. */
+  setTension(tension: number): void {
+    this.tension = Math.max(0, Math.min(1, tension));
+  }
+
   setPlaying(playing: boolean, volume: number): void {
     const c = this.context;
     this.bus.gain.setTargetAtTime(playing ? volume * 0.65 : 0, c.currentTime, playing ? 0.18 : 0.035);
@@ -83,6 +144,7 @@ export class BolichoMusic {
       for (const voice of this.voices) voice.stop(c.currentTime + 0.2);
       this.voices.clear();
       this.step = 0;
+      this.section = 'tema';
     }
   }
 
@@ -120,17 +182,21 @@ export class BolichoMusic {
     // Ao retomar um dispositivo suspenso, não dispara notas atrasadas em rajada.
     if (this.next < c.currentTime) this.next = c.currentTime + 0.04;
     while (this.next < c.currentTime + 0.3) {
-      const bar = Math.floor(this.step / 6) % HARMONY.length;
-      const beat = this.step % 6;
-      const chord = HARMONY[bar]!;
-      const pattern = bar % 2 ? [0, 2, 3, 1, 3, 2] : [0, 1, 2, 3, 2, 1];
-      // Uma respiração no fim da frase evita o efeito de metrônomo interminável.
-      if (!(bar === 15 && beat > 2)) {
-        this.note(chord[pattern[beat]!]!, this.next, beat === 0 ? 0.85 : 0.57 + (beat % 3) * 0.06, beat === 0 ? -0.12 : 0.18);
-        if (beat === 3 && bar % 2 === 0) this.note(chord[0]!, this.next + 0.018, 0.4, -0.12);
+      // Um compasso por vez: as notas ficam agendadas no relógio do áudio.
+      const bar = Math.floor(this.step / 6);
+      const eighth = EIGHTH * (1 - 0.06 * this.tension);
+      if (this.step % 6 === 0) {
+        for (const n of arrangeBar(this.section, bar, this.variation, this.tension, Math.random)) {
+          this.note(n.midi, this.next + n.eighth * eighth + n.offset, n.gain, n.pan);
+        }
       }
-      this.next += EIGHTH;
-      this.step = (this.step + 1) % (HARMONY.length * 6);
+      this.next += eighth;
+      this.step++;
+      if (this.step >= sectionLength(this.section) * 6) {
+        this.step = 0;
+        this.section = nextSection(this.section, Math.random);
+        if (this.section === 'tema') this.variation = (this.variation + 1 + Math.floor(Math.random() * 2)) % PATTERNS.length;
+      }
     }
     this.timer = setTimeout(this.schedule, 100);
   };

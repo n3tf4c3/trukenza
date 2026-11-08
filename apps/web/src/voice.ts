@@ -1,8 +1,8 @@
 import type { CharacterId } from '@trukenza/shared';
 import { useStore } from './store';
-import { SPOKEN, callVoiceStyle } from './performance';
+import { REACTIONS, VOICE_LINES, callVoiceStyle } from './performance';
 import { portugueseVoices, SpeechQueue } from './speechQueue';
-import { playVoiceClip, prepareVoiceClips } from './sound';
+import { playVoiceLine, prepareVoices } from './sound';
 
 const synth = typeof window.speechSynthesis === 'undefined' ? null : window.speechSynthesis;
 let available: SpeechSynthesisVoice[] = [];
@@ -43,9 +43,10 @@ const queue = new SpeechQueue({
       }
       if (state.voiceId) failedVoice = state.voiceId;
       useStore.setState({ voiceFallback: state.voiceId !== '' });
-      if (!line.clip) { ended(true); return; }
-      const rate = Math.max(0.88, Math.min(1.16, line.rate * 0.6 + line.pitch * 0.4));
-      stopClip = playVoiceClip(line.clip, rate, state.voiceVolume, started, ended);
+      if (!line.clip || !line.character) { ended(true); return; }
+      // Cada personagem já tem voz própria: só uma pequena variação para a mesma frase não soar idêntica.
+      const rate = 0.98 + Math.random() * 0.04;
+      stopClip = playVoiceLine(line.character, line.clip, line.variant ?? 0, rate, state.voiceVolume, started, ended);
     };
     if (!synth || !voice) { playLocal(); return; }
     useStore.setState({ voiceFallback: false });
@@ -100,14 +101,36 @@ window.addEventListener('click', unlock, true);
 synth?.addEventListener('voiceschanged', refreshVoices);
 refreshVoices();
 
-/** Só frases fixas do jogo: nunca envia nomes, chat ou cartas a um serviço de voz. */
-export function speakCall(call: string, character: CharacterId, seat: number): void {
+const lastVariant = new Map<string, number>();
+
+/** Sorteia uma variação diferente da última que este personagem disse para este canto. */
+function pickVariant(call: string, character: CharacterId): number {
+  const count = VOICE_LINES[call]?.length ?? 0;
+  const key = `${character}:${call}`;
+  const previous = lastVariant.get(key);
+  let variant = Math.floor(Math.random() * count);
+  if (count > 1 && variant === previous) variant = (variant + 1) % count;
+  lastVariant.set(key, variant);
+  return variant;
+}
+
+function canSpeak(): boolean {
   const s = useStore.getState();
-  const text = SPOKEN[call];
-  if (!text || !unlocked || !s.table || document.hidden || s.reconnecting ||
-      !s.voiceOn || !s.soundOn || s.volume <= 0 || s.voiceVolume <= 0) return;
+  return !!(unlocked && s.table && !document.hidden && !s.reconnecting && s.voiceOn && s.soundOn && s.volume > 0 && s.voiceVolume > 0);
+}
+
+/** Só frases fixas do jogo: nunca envia nomes, chat ou cartas a um serviço de voz. */
+export function speakCall(call: string, character: CharacterId, seat: number, fixed?: number): void {
+  if (!VOICE_LINES[call] || !canSpeak()) return;
   if (call === 'previa') failedVoice = '';
-  queue.enqueue({ text, clip: call, seat, ...callVoiceStyle(call, character), at: performance.now() });
+  const variant = fixed ?? pickVariant(call, character);
+  queue.enqueue({ text: VOICE_LINES[call][variant]!, clip: call, character, variant, seat, ...callVoiceStyle(call, character), at: performance.now() });
+}
+
+/** Reação ocasional (vaza, mão, parda): só com a mesa em silêncio e com a chance indicada. */
+export function speakReaction(kind: (typeof REACTIONS)[number], character: CharacterId, seat: number, chance: number): void {
+  if (Math.random() >= chance || queue.busy || !canSpeak()) return;
+  speakCall(kind, character, seat);
 }
 export function stopVoices(): void { queue.cancel(); }
 
@@ -116,12 +139,14 @@ const unsubscribe = useStore.subscribe((s, previous) => {
       s.voiceOn !== previous.voiceOn || s.soundOn !== previous.soundOn ||
       s.volume !== previous.volume || s.voiceVolume !== previous.voiceVolume || s.voiceId !== previous.voiceId) stopVoices();
   if (s.voiceId !== previous.voiceId) failedVoice = '';
-  if (s.table && s.table.code !== previous.table?.code) prepareVoiceClips(Object.keys(SPOKEN));
+  // Baixa as vozes de quem está na mesa (e de quem chega depois ou troca de personagem).
+  const cast = s.table?.players.map(p => p.character).join() ?? '';
+  if (s.table && cast !== (previous.table?.players.map(p => p.character).join() ?? '')) prepareVoices([...s.table.players.map(p => p.character), s.character]);
 });
 function visibility(): void { if (document.hidden) stopVoices(); }
 document.addEventListener('visibilitychange', visibility);
 window.addEventListener('pagehide', stopVoices);
-if (useStore.getState().table) prepareVoiceClips(Object.keys(SPOKEN));
+{ const s = useStore.getState(); if (s.table) prepareVoices([...s.table.players.map(p => p.character), s.character]); }
 
 if (import.meta.hot) import.meta.hot.dispose(() => {
   unsubscribe();

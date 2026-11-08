@@ -104,7 +104,7 @@ export function ControleSom() {
             onClick={() => {
               const state = useStore.getState();
               const me = selectMe(state);
-              speakCall('truco', me?.character ?? state.character, me?.seat ?? -1);
+              speakCall('truco', me?.character ?? state.character, me?.seat ?? -1, 0);
             }}>Ouvir Truco!</button>
           <button type="button" disabled={!voiceOn || !soundOn || volume === 0 || voiceVolume === 0}
             onClick={() => {

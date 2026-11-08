@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { gesturePose, signalPose, VOICE_STYLE, type GestureKind } from '../src/performance.ts';
+import { gesturePose, signalPose, VOICE_CAST, VOICE_STYLE, type GestureKind } from '../src/performance.ts';
 import { SIGNAL_IDS } from '../../../packages/shared/src/signals.ts';
 import { CHARACTER_IDS } from '../../../packages/shared/src/characters.ts';
 
@@ -29,7 +29,12 @@ test('todo personagem tem registro vocal moderado, sem tom extremo', () => {
   for (const id of CHARACTER_IDS) {
     assert.ok(VOICE_STYLE[id].pitch >= 0.8 && VOICE_STYLE[id].pitch <= 1.4);
     assert.ok(VOICE_STYLE[id].rate >= 0.9 && VOICE_STYLE[id].rate <= 1.2);
+    const cast = VOICE_CAST[id];
+    assert.ok(cast.speed >= 0.85 && cast.speed <= 1.15 && Math.abs(cast.semitones) <= 6, id);
+    assert.ok(Object.values(cast.mix).every(w => w! > 0) && Object.keys(cast.mix).length > 0, id);
   }
+  // Nove timbres diferentes: nenhum par de personagens com a mesma mistura, tom e velocidade.
+  assert.equal(new Set(CHARACTER_IDS.map(id => JSON.stringify(VOICE_CAST[id]))).size, CHARACTER_IDS.length);
 });
 
 test('sinais faciais são distintos, piscam olhos independentes e voltam ao repouso', () => {

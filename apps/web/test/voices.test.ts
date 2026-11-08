@@ -1,29 +1,41 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { test } from 'node:test';
-import { SPOKEN } from '../src/performance.ts';
+import { CHARACTER_IDS } from '../../../packages/shared/src/characters.ts';
+import { VOICE_CAST, VOICE_LINES } from '../src/performance.ts';
 
-test('todas as falas têm áudio local válido, audível e sem saturação', () => {
-  for (const call of Object.keys(SPOKEN)) {
-    const wav = readFileSync(new URL(`../public/vozes/${call}.wav`, import.meta.url));
-    assert.equal(wav.toString('ascii', 0, 4), 'RIFF');
-    assert.equal(wav.toString('ascii', 8, 12), 'WAVE');
-    assert.equal(wav.readUInt32LE(24), 22050);
-    assert.equal(wav.readUInt32LE(40), wav.length - 44);
-    const count = (wav.length - 44) / 2;
-    assert.ok(count / 22050 > 0.2 && count / 22050 < 5, call);
-    // A variação mais grave toca a 0,88x: nem a prévia pode atingir o watchdog de 5,5 s.
-    assert.ok(count / 22050 / 0.88 < 5.3, `${call}: cabe na fila mesmo no personagem mais lento`);
-    if (call === 'truco') assert.ok(count / 22050 / 0.88 < 2, 'grito curto para não prender a resposta');
-    let peak = 0, energy = 0;
-    for (let i = 0; i < count; i++) {
-      const value = wav.readInt16LE(44 + i * 2) / 32768;
-      peak = Math.max(peak, Math.abs(value));
-      energy += value * value;
+const dir = new URL('../public/vozes/', import.meta.url);
+const manifest = JSON.parse(readFileSync(new URL('falas.json', dir), 'utf8')) as {
+  version: string; sampleRate: number; characters: Record<string, Record<string, [number, number][]>>;
+};
+
+test('cada personagem tem voz própria com todas as falas e variações do catálogo', () => {
+  assert.match(manifest.version, /^[0-9a-f]{10}$/);
+  for (const id of CHARACTER_IDS) {
+    assert.ok(VOICE_CAST[id], `elenco sem ${id}`);
+    const file = new URL(`${id}.mp3`, dir);
+    assert.ok(existsSync(file), `voz ausente: ${id}`);
+    const mp3 = readFileSync(file);
+    // ID3 ou quadro MPEG logo no início: é um MP3, não um arquivo trocado.
+    assert.ok(mp3.toString('ascii', 0, 3) === 'ID3' || (mp3[0] === 0xff && (mp3[1]! & 0xe0) === 0xe0), `${id}: MP3 inválido`);
+    assert.ok(statSync(file).size < 600_000, `${id}: arquivo grande demais para baixar na entrada`);
+    const lines = manifest.characters[id]!;
+    let previousEnd = 0;
+    for (const [call, variants] of Object.entries(VOICE_LINES)) {
+      assert.equal(lines[call]?.length, variants.length, `${id}/${call}: variações fora de sincronia com o catálogo`);
+      for (const [start, duration] of lines[call]!) {
+        // Intervalos de silêncio entre falas absorvem o deslocamento do MP3 (folga de 40 ms antes e 100 ms depois).
+        assert.ok(start - previousEnd >= 0.25, `${id}/${call}: falas encostadas`);
+        assert.ok(duration > 0.2 && duration < 5, `${id}/${call}: ${duration} s`);
+        if (call === 'truco') assert.ok(duration < 2.4, `${id}: grito curto para não prender a resposta`);
+        previousEnd = start + duration;
+      }
     }
-    assert.ok(peak > 0.5 && peak < 0.9, call);
-    assert.ok(Math.sqrt(energy / count) > 0.015, `${call}: fala audível`);
-    assert.equal(wav.readInt16LE(44), 0);
-    assert.equal(wav.readInt16LE(wav.length - 2), 0);
   }
+});
+
+test('o murmúrio do bolicho existe e é leve', () => {
+  const file = new URL('ambiente-bar.mp3', dir);
+  assert.ok(existsSync(file));
+  assert.ok(statSync(file).size > 50_000 && statSync(file).size < 400_000);
 });

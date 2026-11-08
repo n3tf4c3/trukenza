@@ -1,10 +1,10 @@
 /** Foley original: papel, madeira e cerâmica, com transientes e ressonâncias amortecidas.
  * As amostras são geradas localmente; a variação evita repetir exatamente a mesma batida.
  */
-export type FoleyKind = 'papel' | 'madeira' | 'feijao' | 'deslizar';
+export type FoleyKind = 'papel' | 'madeira' | 'feijao' | 'deslizar' | 'copo' | 'rangido';
 
 export function materialSound(kind: FoleyKind, sampleRate: number, variant = 0): Float32Array<ArrayBuffer> {
-  const duration = { papel: 0.22, madeira: 0.38, feijao: 0.24, deslizar: 0.42 }[kind];
+  const duration = { papel: 0.22, madeira: 0.38, feijao: 0.24, deslizar: 0.42, copo: 0.5, rangido: 0.55 }[kind];
   const data = new Float32Array(Math.ceil(duration * sampleRate));
   let seed = (9173 + variant * 1987) >>> 0;
   let low = 0;
@@ -37,6 +37,19 @@ export function materialSound(kind: FoleyKind, sampleRate: number, variant = 0):
       v = Math.sin(tau * 835 * pitch * t) * Math.exp(-t * 38) * 0.3
         + Math.sin(tau * 1823 * pitch * t) * Math.exp(-t * 58) * 0.13
         + paper * Math.exp(-t * 180) * 0.55;
+    } else if (kind === 'copo') {
+      // Copo de vidro grosso pousando na madeira: baque abafado e o tilintar inarmônico do vidro.
+      v = Math.sin(tau * 160 * pitch * t) * Math.exp(-t * 45) * 0.32
+        + Math.sin(tau * 2350 * pitch * t) * Math.exp(-t * 14) * 0.13
+        + Math.sin(tau * 3710 * pitch * t) * Math.exp(-t * 19) * 0.08
+        + Math.sin(tau * 5480 * pitch * t) * Math.exp(-t * 26) * 0.05
+        + paper * Math.exp(-t * 220) * 0.5;
+    } else if (kind === 'rangido') {
+      // Palha e encaixes da cadeira: atrito em pulsos irregulares numa ressonância que desliza.
+      const envelope = Math.sin(Math.PI * t / duration) ** 1.2;
+      const stick = Math.max(0, Math.sin(tau * (38 + 22 * t / duration) * pitch * t)) ** 6;
+      const body = Math.sin(tau * (520 - 180 * t / duration) * pitch * t);
+      v = (body * 0.35 + mid * 0.6) * stick * envelope * 0.9;
     } else {
       const envelope = Math.sin(Math.PI * t / duration) ** 1.6;
       v = paper * envelope * (0.38 + 0.12 * Math.sin(tau * 37 * t)) + low * envelope * 0.13;

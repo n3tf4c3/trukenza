@@ -52,7 +52,7 @@ import {
 } from '@trukenza/shared';
 import { useStore, type PlayerView, type TableView } from './store';
 import { dealSound, pointsSound, sfx } from './sound';
-import { speakCall, stopVoices } from './voice';
+import { speakCall, speakReaction, stopVoices } from './voice';
 import type { GestureKind } from './performance';
 import { eventCursor, validSelection } from './handExperience';
 
@@ -174,7 +174,12 @@ function stage(e: MatchEvent, game: GameView, table: TableView): void {
   const { toast, me } = useStore.getState();
   const mySeat = table.players.find((p) => p.id === me)?.seat ?? -1;
   const myTeam = mySeat >= 0 ? teamOfSeat(mySeat) : null;
-  const say = (call: string, seat: number) => speakCall(call, table.players.find(p => p.seat === seat)?.character ?? DEFAULT_CHARACTER, seat);
+  const characterAt = (seat: number) => table.players.find(p => p.seat === seat)?.character ?? DEFAULT_CHARACTER;
+  const say = (call: string, seat: number) => speakCall(call, characterAt(seat), seat);
+  // Comentário de mesa: de vez em quando, depois do lance, se ninguém estiver falando.
+  const react = (kind: 'vaza' | 'mao-ganha' | 'mao-perdida' | 'parda', seat: number, chance: number, delay: number) =>
+    setTimeout(() => speakReaction(kind, characterAt(seat), seat, chance), delay);
+  const anyOf = (seats: number[]) => seats[Math.floor(Math.random() * seats.length)];
   switch (e.kind) {
     case 'nova-mao':
       stopVoices();
@@ -219,9 +224,11 @@ function stage(e: MatchEvent, game: GameView, table: TableView): void {
       if (e.outcome === 'parda') {
         toast(`Vaza ${e.trick + 1}: parda!`);
         sfx('parda', 0.45);
+        react('parda', anyOf(Array.from({ length: game.seats }, (_, s) => s))!, 0.35, 700);
       } else if (e.winnerSeat !== null && teamOfSeat(e.winnerSeat) === myTeam) {
         sfx('vaza-nossa', 0.45);
       }
+      if (e.winnerSeat !== null) react('vaza', e.winnerSeat, 0.3, 650);
       return;
     case 'envido': {
       const r = e.result;
@@ -268,6 +275,9 @@ function stage(e: MatchEvent, game: GameView, table: TableView): void {
           500,
         );
         gesture(Array.from({ length: game.seats }, (_, s) => s).filter(s => teamOfSeat(s) !== e.winnerTeam), 'derrota', 500);
+        const seats = Array.from({ length: game.seats }, (_, s) => s);
+        react('mao-ganha', anyOf(seats.filter(s => teamOfSeat(s) === e.winnerTeam))!, 0.55, 900);
+        react('mao-perdida', anyOf(seats.filter(s => teamOfSeat(s) !== e.winnerTeam))!, 0.3, 2300);
       }
       return;
     case 'fim-partida':

@@ -33,7 +33,6 @@ let brown: AudioBuffer;
 let music: BolichoMusic;
 const materialBuffers = new Map<string, AudioBuffer>();
 const noteBuffers = new Map<number, AudioBuffer>();
-const voiceBuffers = new Map<string, Promise<AudioBuffer>>();
 let room: ConvolverNode;
 let variation = 0;
 
@@ -108,38 +107,57 @@ window.addEventListener('pointerdown', unlock);
 window.addEventListener('keydown', unlock);
 window.addEventListener('click', unlock, true);
 
-function loadVoiceClip(clip: string, context: AudioContext): Promise<AudioBuffer> {
-  let buffer = voiceBuffers.get(clip);
-  if (!buffer) {
-    buffer = fetch(`/vozes/${clip}.wav?v=4`).then(async response => {
-      if (!response.ok) throw Error('Fala indisponível');
-      return context.decodeAudioData(await response.arrayBuffer());
+/** Índice das falas locais (gerado por scripts/generate-voices.ps1): início e duração de cada variação. */
+interface VoiceManifest { version: string; characters: Record<string, Record<string, [number, number][]>> }
+let manifest: Promise<VoiceManifest> | null = null;
+const voiceSprites = new Map<string, Promise<AudioBuffer>>();
+
+function loadManifest(): Promise<VoiceManifest> {
+  if (!manifest) {
+    manifest = fetch('/vozes/falas.json', { cache: 'no-cache' }).then(async response => {
+      if (!response.ok) throw Error('Falas indisponíveis');
+      return (await response.json()) as VoiceManifest;
     });
-    voiceBuffers.set(clip, buffer);
-    void buffer.catch(() => voiceBuffers.delete(clip));
+    void manifest.catch(() => { manifest = null; });
   }
-  return buffer;
+  return manifest;
 }
 
-/** Entrada na mesa: baixa e decodifica as falas antes do primeiro canto. */
-export function prepareVoiceClips(clips: string[]): void {
+/** Um arquivo por personagem com todas as falas dele: só baixa quem está na mesa. */
+function loadSprite(character: string, context: AudioContext): Promise<AudioBuffer> {
+  let sprite = voiceSprites.get(character);
+  if (!sprite) {
+    sprite = loadManifest().then(async m => {
+      const response = await fetch(`/vozes/${character}.mp3?v=${encodeURIComponent(m.version)}`);
+      if (!response.ok) throw Error('Voz indisponível');
+      return context.decodeAudioData(await response.arrayBuffer());
+    });
+    voiceSprites.set(character, sprite);
+    void sprite.catch(() => voiceSprites.delete(character));
+  }
+  return sprite;
+}
+
+/** Entrada na mesa: baixa e decodifica as vozes dos personagens presentes antes do primeiro canto. */
+export function prepareVoices(characters: string[]): void {
   setup();
   if (!ctx) return;
-  for (const clip of clips) if (/^[a-z-]+$/.test(clip)) void loadVoiceClip(clip, ctx).catch(() => {});
+  for (const c of new Set(characters)) if (/^[a-z]+$/.test(c)) void loadSprite(c, ctx).catch(() => {});
 }
 
 /** Falas próprias pré-sintetizadas: mesmo volume geral, sem depender do motor de voz do navegador. */
-export function playVoiceClip(clip: string, rate: number, volume: number, started: () => void, ended: (failed?: boolean) => void): () => void {
+export function playVoiceLine(character: string, key: string, variant: number, rate: number, volume: number,
+  started: () => void, ended: (failed?: boolean) => void): () => void {
   setup();
   const context = ctx;
   let canceled = false;
   let source: AudioBufferSourceNode | null = null;
   let gain: GainNode | null = null;
-  if (!context || !/^[a-z-]+$/.test(clip)) { ended(true); return () => {}; }
-  const buffer = loadVoiceClip(clip, context);
-  void Promise.all([buffer, context.resume()]).then(([decoded]) => {
+  if (!context || !/^[a-z]+$/.test(character) || !/^[a-z-]+$/.test(key)) { ended(true); return () => {}; }
+  void Promise.all([loadManifest(), loadSprite(character, context), context.resume()]).then(([m, decoded]) => {
     if (canceled) return;
-    if (context.state !== 'running') { ended(true); return; }
+    const slot = m.characters[character]?.[key]?.[variant] ?? m.characters[character]?.[key]?.[0];
+    if (context.state !== 'running' || !slot) { ended(true); return; }
     source = context.createBufferSource();
     source.buffer = decoded;
     source.playbackRate.value = rate;
@@ -150,14 +168,25 @@ export function playVoiceClip(clip: string, rate: number, volume: number, starte
       source?.disconnect(); gain?.disconnect();
       if (!canceled) ended();
     };
-    source.start();
+    // Folga nas bordas: o MP3 desloca alguns milissegundos e os intervalos entre falas são silêncio.
+    const [at, duration] = slot;
+    source.start(0, Math.max(0, at - 0.04), duration + 0.1);
     started();
   }).catch(() => { if (!canceled) ended(true); });
   return () => { canceled = true; source?.stop(); source?.disconnect(); gain?.disconnect(); };
 }
 
+/** Tensão pública da mão: canto esperando resposta pesa mais; Truco já valendo mais pesa um pouco. */
+function tableTension(game: ReturnType<typeof useStore.getState>['game']): number {
+  const h = game?.hand;
+  if (!h || h.ended || game.winner !== null) return 0;
+  if (h.truco.pending || h.envido.pending || h.flor.pending) return 1;
+  return h.truco.level >= 3 ? 0.45 : h.truco.level === 2 ? 0.2 : 0;
+}
+
 useStore.subscribe((s, prev) => {
   if (!ctx) return;
+  if (s.game !== prev.game) music.setTension(tableTension(s.game));
   if (s.musicOn !== prev.musicOn || s.musicVolume !== prev.musicVolume || s.soundOn !== prev.soundOn || s.volume !== prev.volume || s.speaking !== prev.speaking) syncMusic();
   if (s.speaking !== prev.speaking) sfxBus.gain.setTargetAtTime(s.speaking ? 0.55 : 1, ctx.currentTime, 0.06);
   if (s.soundOn === prev.soundOn && s.volume === prev.volume) return;
@@ -365,6 +394,28 @@ export function sfx(name: Sfx, delay = 0): void {
   }
 }
 
+/** Sons dos gestos ociosos (mesa viva): o copo sai e volta à mesa, a cadeira range, o leque farfalha. */
+export function idleSound(kind: 'gole' | 'leque' | 'cocar' | 'recostar', distance = 1): void {
+  if (!ctx || ctx.state !== 'running' || masterLevel() === 0 || document.hidden) return;
+  const t = ctx.currentTime + 0.01;
+  const g = Math.max(0.25, Math.min(1, 1.6 / Math.max(0.5, distance)));
+  switch (kind) {
+    case 'gole':
+      foley('copo', t + 0.4, 0.22 * g);
+      foley('copo', t + 2.05, 0.4 * g);
+      return;
+    case 'recostar':
+      foley('rangido', t + 0.1, 0.35 * g);
+      return;
+    case 'leque':
+      swish(t + 0.15, 0.09, 0.05 * g);
+      swish(t + 0.45, 0.08, 0.04 * g);
+      return;
+    case 'cocar':
+      return;
+  }
+}
+
 /** Cartas indo para cada um na distribuição (três por cadeira). */
 export function dealSound(seats: number, delay = 0): void {
   if (!ctx || ctx.state !== 'running' || masterLevel() === 0) return;
@@ -389,6 +440,43 @@ let ambientScenery: SceneryId = 'bolicho';
 let ambientOn = false;
 let ambientNodes: AudioScheduledSourceNode[] = [];
 let crackleTimer: ReturnType<typeof setTimeout> | undefined;
+let clinkTimer: ReturnType<typeof setTimeout> | undefined;
+let murmur: Promise<AudioBuffer> | null = null;
+
+/** Burburinho de outros fregueses: só onde faz sentido gente em volta. */
+const MURMUR_LEVEL: Partial<Record<SceneryId, number>> = { bolicho: 0.55, paris: 0.32, vegas: 0.26 };
+
+function startMurmur(c: AudioContext, scenery: SceneryId): void {
+  const level = MURMUR_LEVEL[scenery];
+  if (!level) return;
+  murmur ??= fetch('/vozes/ambiente-bar.mp3').then(async r => {
+    if (!r.ok) throw Error('Ambiente indisponível');
+    return c.decodeAudioData(await r.arrayBuffer());
+  });
+  void murmur.then(buffer => {
+    if (!ambientOn || ambientScenery !== scenery) return;
+    const source = c.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;
+    const gain = c.createGain();
+    gain.gain.value = level;
+    source.connect(gain).connect(ambBus);
+    source.onended = () => { source.disconnect(); gain.disconnect(); };
+    source.start(0, Math.random() * buffer.duration);
+    ambientNodes.push(source);
+  }).catch(() => { murmur = null; });
+}
+
+/** Um copo pousando lá no balcão, de vez em quando. */
+function distantClink(): void {
+  if (!ctx || !ambientOn || !MURMUR_LEVEL[ambientScenery]) return;
+  if (ctx.state === 'running' && !document.hidden) {
+    const t = ctx.currentTime + 0.02;
+    foley('copo', t, 0.09);
+    if (Math.random() < 0.3) foley('copo', t + 0.18 + Math.random() * 0.1, 0.07);
+  }
+  clinkTimer = setTimeout(distantClink, 7000 + Math.random() * 12000);
+}
 
 /** Estalos da lenha, em intervalos irregulares. */
 function crackle(): void {
@@ -458,6 +546,8 @@ export function startAmbient(scenery: SceneryId = ambientScenery): void {
   wind.start(0, 1.3);
   lfo.start();
   ambientNodes = [fire, wind, lfo];
+  startMurmur(c, scenery);
+  clinkTimer = setTimeout(distantClink, 4000 + Math.random() * 6000);
   ambBus.gain.cancelScheduledValues(c.currentTime);
   ambBus.gain.setTargetAtTime(document.hidden ? 0 : AMBIENT_LEVEL, c.currentTime, 0.8);
   crackle();
@@ -470,6 +560,7 @@ export function stopAmbient(): void {
   if (!ctx || !ambientOn) return;
   ambientOn = false;
   clearTimeout(crackleTimer);
+  clearTimeout(clinkTimer);
   const end = ctx.currentTime + 0.6;
   ambBus.gain.cancelScheduledValues(ctx.currentTime);
   ambBus.gain.setTargetAtTime(0, ctx.currentTime, 0.15);

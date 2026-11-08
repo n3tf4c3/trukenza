@@ -7,6 +7,7 @@ import type { Card } from '@trukenza/game-engine';
 import { Portrait } from '../ui/Portrait';
 import { CHAIR_RADIUS, CUP_RADIUS, CUP_SIDE, DOOR, SEAT_HEIGHT, TABLE_HEIGHT, polar } from './layout';
 import { useCupModel } from './Bolicho';
+import { idleSound } from '../sound';
 import { HeldCards } from './Cards';
 import { localAvatar } from './avatar';
 import { htmlLayer } from './htmlLayer';
@@ -204,7 +205,10 @@ export function Character(props: CharacterProps) {
       props.speakingAt === null && !props.signal;
     if (a.idle && (clockNow - a.idle.at >= IDLE_DURATION[a.idle.kind] || gesturing || props.active || a.sit < 0.9)) a.idle = null;
     if (!a.idle && clockNow >= a.nextIdle) {
-      if (calm) a.idle = { kind: pickIdle(character, hasCards, Math.random()), at: clockNow };
+      if (calm) {
+        a.idle = { kind: pickIdle(character, hasCards, Math.random()), at: clockNow };
+        idleSound(a.idle.kind, localAvatar.ready ? a.pos.distanceTo(localAvatar.pos) : 2);
+      }
       a.nextIdle = clockNow + (calm ? IDLE_GAP[0] + Math.random() * (IDLE_GAP[1] - IDLE_GAP[0]) : 2 + Math.random() * 2);
     }
     const idleAge = a.idle ? clockNow - a.idle.at : 0;

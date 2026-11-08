@@ -12,13 +12,54 @@ export const VOICE_STYLE: Record<CharacterId, { pitch: number; rate: number }> =
   negon: { pitch: 1.06, rate: 1.04 },
 };
 
-export const SPOKEN: Record<string, string> = {
-  truco: 'Truco! Vai encarar?', retruco: 'Retruco!', 'vale-quatro': 'Vale quatro!',
-  envido: 'Envido!', 'real-envido': 'Real envido!', 'falta-envido': 'Falta envido!',
-  flor: 'Flor!', 'contra-flor': 'Contra flor!', 'contra-flor-resto': 'Contra flor e o resto!',
-  quero: 'Quero!', 'nao-quero': 'Não quero!', 'me-achico': 'Me achico!',
-  baralho: 'Fui ao baralho!', contestar: 'Contesto!', 'contestar-flor': 'Contesto a flor!',
-  previa: 'Truco! Vai encarar? Retruco! Vale quatro!',
+/**
+ * Falas do jogo: a primeira variação é a principal (texto da voz do navegador). As demais alternam nas
+ * falas locais para a mesa não repetir sempre a mesma frase. Só frases fixas; nenhum nome nem carta.
+ */
+export const VOICE_LINES: Record<string, readonly string[]> = {
+  truco: ['Truco! Vai encarar?', 'Truco!', 'É truco, meu chapa!'],
+  retruco: ['Retruco!', 'Quero retruco!'],
+  'vale-quatro': ['Vale quatro!', 'Vale quatro, e agora?'],
+  envido: ['Envido!', 'Envido, vamos ver!'],
+  'real-envido': ['Real envido!'],
+  'falta-envido': ['Falta envido!'],
+  flor: ['Flor!', 'Tenho flor!'],
+  'contra-flor': ['Contra flor!'],
+  'contra-flor-resto': ['Contra flor e o resto!'],
+  quero: ['Quero!', 'Quero, sim!', 'Aceito!'],
+  'nao-quero': ['Não quero!', 'Tô fora!', 'Esse não.'],
+  'me-achico': ['Me achico!'],
+  baralho: ['Fui ao baralho!', 'Vou pro baralho.'],
+  contestar: ['Contesto!'],
+  'contestar-flor': ['Contesto a flor!'],
+  previa: ['Truco! Vai encarar? Retruco! Vale quatro!'],
+  // Reações ocasionais, só quando a mesa está em silêncio.
+  vaza: ['Essa é minha!', 'Toma!', 'Fácil, fácil!'],
+  'mao-ganha': ['É nóis!', 'Vamo que vamo!', 'Isso aí, parceiro!'],
+  'mao-perdida': ['Ah, não!', 'Eita!', 'Tá bom, tá bom.'],
+  parda: ['Empatou!', 'Parda!'],
+};
+
+export const SPOKEN: Record<string, string> = Object.fromEntries(Object.entries(VOICE_LINES).map(([k, v]) => [k, v[0]!]));
+
+/** Reações não são cantos: tocam só de vez em quando e nunca entram na fila de quem está falando. */
+export const REACTIONS = ['vaza', 'mao-ganha', 'mao-perdida', 'parda'] as const;
+
+/**
+ * Elenco de vozes das falas locais (geradas por `scripts/generate-voices.ps1` com o Kokoro-82M, Apache 2.0):
+ * mistura das três vozes brasileiras do modelo, velocidade e tom em semitons. Inspiradas no jeito de cada
+ * personagem, sem imitar pessoas reais.
+ */
+export const VOICE_CAST: Record<CharacterId, { mix: Partial<Record<'pm_alex' | 'pm_santa' | 'pf_dora', number>>; speed: number; semitones: number }> = {
+  neymt:        { mix: { pm_alex: 1 }, speed: 1.08, semitones: 1 },
+  presuntinho:  { mix: { pm_santa: 0.8, pf_dora: 0.2 }, speed: 1.05, semitones: 4 },
+  moleti:       { mix: { pm_santa: 1 }, speed: 0.97, semitones: -1.5 },
+  baiaca:       { mix: { pm_alex: 0.6, pm_santa: 0.4 }, speed: 1, semitones: 0 },
+  luistesoura:  { mix: { pm_alex: 0.7, pf_dora: 0.3 }, speed: 1.06, semitones: 2 },
+  sardinha:     { mix: { pm_santa: 0.6, pf_dora: 0.4 }, speed: 1.1, semitones: 5 },
+  gordodofusca: { mix: { pm_santa: 1 }, speed: 0.9, semitones: -3.5 },
+  tiba:         { mix: { pm_alex: 1 }, speed: 1.12, semitones: -1 },
+  negon:        { mix: { pm_alex: 0.5, pm_santa: 0.5 }, speed: 1.03, semitones: 2.5 },
 };
 
 /** Os desafios têm mais peso; as respostas preservam o ritmo de cada personagem. */

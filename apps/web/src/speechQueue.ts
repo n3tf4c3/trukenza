@@ -6,6 +6,9 @@ export interface SpeechLine {
   rate: number;
   at: number;
   clip?: string;
+  /** Fala local: personagem e variação dentro do arquivo dele. */
+  character?: string;
+  variant?: number;
 }
 
 export interface SpeechDriver {
@@ -26,6 +29,11 @@ export class SpeechQueue {
     this.driver = driver;
     this.change = change;
     this.now = now;
+  }
+
+  /** Alguém falando ou esperando a vez: as reações ficam para outra hora. */
+  get busy(): boolean {
+    return this.current !== null || this.pending.length > 0;
   }
 
   enqueue(line: SpeechLine): void {

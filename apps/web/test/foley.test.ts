@@ -4,7 +4,7 @@ import { materialSound, roomImpulse, type FoleyKind } from '../src/foley.ts';
 
 for (const rate of [22050, 44100, 48000]) {
   test(`foley em ${rate} Hz: ataques suaves, caudas completas e margem contra saturação`, () => {
-    for (const kind of ['papel', 'madeira', 'feijao', 'deslizar'] as FoleyKind[]) {
+    for (const kind of ['papel', 'madeira', 'feijao', 'deslizar', 'copo', 'rangido'] as FoleyKind[]) {
       for (let variant = 0; variant < 4; variant++) {
         const data = materialSound(kind, rate, variant);
         let peak = 0;
