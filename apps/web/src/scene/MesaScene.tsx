@@ -101,6 +101,7 @@ function Mesa({ post }: { post: boolean }) {
   const game = useStore((s) => (s.table?.phase === PHASE_PLAYING ? s.game : null));
   const gestures = useStore((s) => s.gestures);
   const signals = useStore((s) => s.signals);
+  const cheers = useStore((s) => s.cheers);
   const speaking = useStore((s) => s.speaking);
   const shouts = useStore((s) => s.shouts);
   const playableIds = useStore((s) => s.playable);
@@ -180,6 +181,7 @@ function Mesa({ post }: { post: boolean }) {
             partner={seated ? partnerOf(p.seat) : null}
             challengeAt={seated && challenge && actors.has(p.seat) && teamOfSeat(challenge.seat) !== teamOfSeat(p.seat) ? challenge.at : null}
             signal={seated && signals[p.seat]?.hand === handKey && !game?.hand?.ended ? signals[p.seat] : undefined}
+            cheerAt={seated ? cheers[p.seat] ?? null : null}
           />
         );
       })}

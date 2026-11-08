@@ -1,5 +1,6 @@
 import type { CharacterId } from '@trukenza/shared';
 import type { SignalId } from '@trukenza/shared';
+import { PHRASE_IDS, PHRASES } from '@trukenza/shared';
 
 export type GestureKind = 'canto' | 'quero' | 'recusa' | 'jogar' | 'vaza' | 'vitoria' | 'derrota';
 
@@ -38,6 +39,8 @@ export const VOICE_LINES: Record<string, readonly string[]> = {
   'mao-ganha': ['É nóis!', 'Vamo que vamo!', 'Isso aí, parceiro!'],
   'mao-perdida': ['Ah, não!', 'Eita!', 'Tá bom, tá bom.'],
   parda: ['Empatou!', 'Parda!'],
+  // Frases rápidas dos jogadores: uma só gravação por frase, igual ao texto do balão.
+  ...Object.fromEntries(PHRASE_IDS.map(id => [`frase-${id}`, [PHRASES[id].text]])),
 };
 
 export const SPOKEN: Record<string, string> = Object.fromEntries(Object.entries(VOICE_LINES).map(([k, v]) => [k, v[0]!]));

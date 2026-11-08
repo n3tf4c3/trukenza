@@ -76,6 +76,8 @@ export function Ajuda() {
           <dl className="ajuda-sinais">{SIGNAL_IDS.map(id => <div key={id}><dt>{SIGNALS[id].label}</dt><dd>{SIGNALS[id].meaning}</dd></div>)}</dl>
           <p>O computador considera o último sinal do parceiro para jogar e responder aos cantos. Pode acreditar em um blefe. Sinais de força valem até o autor jogar outra carta; os de Envido, até o fim da mão. Quem foi ao baralho deixa de ser considerado.</p>
           <p>O gesto dura 1,8 s, com intervalo de 2,5 s entre sinais. Não altera o turno nem o relógio. O computador ainda não emite sinais.</p>
+          <h3>Frases da mesa</h3>
+          <p>Em “Frases”, qualquer pessoa sentada provoca, elogia o parceiro ou pede mais uma gelada, na espera ou durante a partida. Todos ouvem na voz do seu personagem; o brinde ergue o copo. São frases prontas, sem texto livre, e não dizem nada sobre as suas cartas. Há um intervalo de 4 s entre frases.</p>
         </>}
       </section>
     </dialog>

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { gesturePose, signalPose, VOICE_CAST, VOICE_STYLE, type GestureKind } from '../src/performance.ts';
+import { gesturePose, signalPose, VOICE_CAST, VOICE_LINES, VOICE_STYLE, type GestureKind } from '../src/performance.ts';
+import { PHRASE_IDS, PHRASES } from '../../../packages/shared/src/phrases.ts';
 import { SIGNAL_IDS } from '../../../packages/shared/src/signals.ts';
 import { CHARACTER_IDS } from '../../../packages/shared/src/characters.ts';
 
@@ -49,4 +50,9 @@ test('sinais faciais são distintos, piscam olhos independentes e voltam ao repo
   assert.ok(signalPose('piscada', 0.6).leftEye < 0.1);
   assert.ok(signalPose('olhos', 0.6).rightEye < 0.1);
   assert.equal(signalPose('boca-direita', 0.6).mouthX, -signalPose('boca-esquerda', 0.6).mouthX);
+});
+
+test('cada frase rápida tem uma única fala, com o mesmo texto do balão', () => {
+  for (const id of PHRASE_IDS) assert.deepEqual(VOICE_LINES[`frase-${id}`], [PHRASES[id].text]);
+  assert.equal(Object.keys(VOICE_LINES).filter(k => k.startsWith('frase-')).length, PHRASE_IDS.length);
 });

@@ -1190,3 +1190,12 @@ button.discreto {
 @media (max-width: 900px) {
   .cenario-painel { position: fixed; top: 76px; left: 16px; right: auto; }
 }
+
+/* Frases rápidas: mesmo painel dos sinais, com as frases agrupadas. */
+.frases-grupo { margin-bottom: 10px; }
+.frases-grupo > small { display: block; margin-bottom: 5px; color: #e9c27c; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+.frases-grade { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.frases-grade button { text-align: left; padding: 9px 10px; font-size: 13px; line-height: 1.3; }
+@media (max-width: 640px) {
+  .frases-grade { grid-template-columns: 1fr; }
+}

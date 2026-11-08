@@ -22,9 +22,13 @@ import {
   DEFAULT_SCENERY,
   parseScenery,
   parseSceneryMessage,
+  MSG_PHRASE,
   MSG_SIGNAL,
+  MSG_TABLE_PHRASE,
   MSG_TABLE_SIGNAL,
+  PHRASE_COOLDOWN_MS,
   SIGNAL_COOLDOWN_MS,
+  parsePhraseRequest,
   parseSignalRequest,
   MSG_ADD_BOTS,
   MSG_CHARACTER,
@@ -126,6 +130,8 @@ export class MesaRoom extends Room<{ state: TableState }> {
   private idleTimer: Timer | null = null;
   private signalId = 0;
   private signalAt = new Map<string, number>();
+  private phraseId = 0;
+  private phraseAt = new Map<string, number>();
   private readonly observedSignals = new SignalMemory();
 
   async onCreate(options: CreateRoomOptions = {}): Promise<void> {
@@ -202,6 +208,7 @@ export class MesaRoom extends Room<{ state: TableState }> {
     });
     this.onMessage(MSG_ACTION, (client, raw) => this.receiveAction(client, raw));
     this.onMessage(MSG_SIGNAL, (client, raw) => this.receiveSignal(client, raw));
+    this.onMessage(MSG_PHRASE, (client, raw) => this.receivePhrase(client, raw));
 
     this.touch();
     processMetrics.rooms++;
@@ -298,6 +305,7 @@ export class MesaRoom extends Room<{ state: TableState }> {
   /** Saída definitiva: por vontade própria ou fim do prazo de reconexão. No meio da partida, o computador assume. */
   onLeave(client: Client): void {
     this.signalAt.delete(client.sessionId);
+    this.phraseAt.delete(client.sessionId);
     this.observedSignals.forget(this.table.players.get(client.sessionId)?.seat ?? -1);
     this.table.leave(client.sessionId);
     processMetrics.players--;
@@ -358,6 +366,19 @@ export class MesaRoom extends Room<{ state: TableState }> {
     this.touch();
     // A cadeira vem da sessão, nunca do payload. Todos podem observar, inclusive adversários.
     this.broadcast(MSG_TABLE_SIGNAL, { ...request, seat: p.seat, id: ++this.signalId });
+  }
+
+  /** Frase rápida do catálogo, na espera ou na partida: só som e balão, sem mexer em versão, cartas ou relógio. */
+  private receivePhrase(client: Client, raw: unknown): void {
+    const request = parsePhraseRequest(raw);
+    const p = this.table.players.get(client.sessionId);
+    if (!request || !p || p.seat < 0 || !p.connected || !p.settled) return;
+    const now = Date.now();
+    if (now - (this.phraseAt.get(client.sessionId) ?? -Infinity) < PHRASE_COOLDOWN_MS) return;
+    this.phraseAt.set(client.sessionId, now);
+    this.touch();
+    // A cadeira vem da sessão, nunca do payload.
+    this.broadcast(MSG_TABLE_PHRASE, { phrase: request.phrase, seat: p.seat, id: ++this.phraseId });
   }
 
   /** Depois de toda mudança: agenda a próxima decisão (computador, relógio, pausa) e manda o estado. */

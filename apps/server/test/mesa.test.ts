@@ -8,8 +8,11 @@ import { ACTION_ERROR_TEXT, parseCardId, type MatchView } from '@trukenza/game-e
 import {
   MSG_ACTION,
   MSG_SCENERY,
+  MSG_PHRASE,
   MSG_SIGNAL,
+  MSG_TABLE_PHRASE,
   MSG_TABLE_SIGNAL,
+  type TablePhrase,
   type TableSignal,
   MSG_ADD_BOTS,
   MSG_CHARACTER,
@@ -437,6 +440,43 @@ describe('sinais de dupla', () => {
     spectator.send(MSG_SIGNAL, { signal: 'olhos', hand: gameOf(room).hand!.number, seat: 0 });
     await new Promise(r => setTimeout(r, 60));
     expect(received).toEqual([]);
+  });
+});
+
+describe('frases rápidas', () => {
+  it('na espera e na partida: todos ouvem, a sessão define a cadeira e o intervalo segura a enxurrada', async () => {
+    const room = await newRoom({ seats: 4, rules: { turnSeconds: 60 } });
+    const a = await t.connectTo(room);
+    const b = await t.connectTo(room);
+    const spectator = await t.connectTo(room);
+    const heard = [a, b, spectator].map(c => inbox<TablePhrase>(c, MSG_TABLE_PHRASE));
+    // Em pé ninguém fala pela mesa.
+    a.send(MSG_PHRASE, { phrase: 'medo' });
+    await seatAll(room, [a, b]);
+    const before = room.state.game;
+    a.send(MSG_PHRASE, { phrase: 'saude', seat: 1, text: 'qualquer coisa' });
+    await until(() => heard.every(m => m.length === 1));
+    expect(heard.map(m => m[0])).toEqual(Array(3).fill({ phrase: 'saude', seat: 0, id: 1 }));
+    expect(room.state.game).toBe(before);
+    // Dentro do intervalo, desconhecida ou de quem não senta: descartadas em silêncio.
+    a.send(MSG_PHRASE, { phrase: 'blefe' });
+    b.send(MSG_PHRASE, { phrase: 'Bora mais uma?' });
+    spectator.send(MSG_PHRASE, { phrase: 'boa', seat: 0 });
+    await new Promise(r => setTimeout(r, 60));
+    expect(heard.every(m => m.length === 1)).toBe(true);
+    a.send(MSG_ADD_BOTS);
+    await until(() => room.state.seats.every(s => s.status === SEAT_TAKEN));
+    a.send(MSG_START);
+    await until(() => !!room.state.game);
+    // Na partida também: a frase não mexe no estado nem na vez.
+    const game = room.state.game;
+    b.send(MSG_PHRASE, { phrase: 'boa' });
+    await until(() => heard.every(m => m.length === 2));
+    expect(heard[0]!.map(m => [m.seat, m.phrase])).toEqual([[0, 'saude'], [1, 'boa']]);
+    expect(room.state.game).toBe(game);
+    b.send(MSG_PHRASE, { phrase: 'medo' });
+    await new Promise(r => setTimeout(r, 60));
+    expect(heard[0]!.length).toBe(2);
   });
 });
 

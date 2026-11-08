@@ -13,6 +13,7 @@ import { Portrait } from './Portrait';
 import { ControleSom, SomDaMesa } from './Som';
 import { resetFreeCamera } from '../scene/freeCamera';
 import { Sinais } from './Sinais';
+import { Frases } from './Frases';
 import { EncerrarPartida } from './EncerrarPartida';
 import { Ajuda } from './Ajuda';
 import { ControlesCartas, DicasContextuais, OpcoesDicas, ResumoMao } from './Experiencia';
@@ -201,6 +202,7 @@ export function MesaHud() {
             <Sinais />
           </>
         )}
+        {seated && <Frases />}
       </footer>
 
       {picking && waiting && (
@@ -217,7 +219,7 @@ export function MesaHud() {
 
       {playing && <Placar game={game} table={table} myTeam={myTeam} />}
       {playing && <NaMesa game={game} table={table} mySeat={mySeat} />}
-      {playing && <Gritos table={table} />}
+      <Gritos table={table} />
       {playing && <FimDePartida game={game} table={table} isHost={isHost} myTeam={myTeam} />}
       {reconnecting && <div className="faixa">Conexão instável: reconectando…</div>}
       <div className="avisos" aria-live="polite">

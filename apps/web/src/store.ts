@@ -79,6 +79,10 @@ interface Store {
   gestures: Record<number, Gesture>;
   signals: Record<number, TableSignal & { at: number }>;
   signalNextAt: number;
+  /** Quando o próprio jogador pode mandar outra frase rápida (performance.now). */
+  phraseNextAt: number;
+  /** Brinde por cadeira: instante da frase de copo erguido ("Saúde, pessoal!"). */
+  cheers: Record<number, number>;
   camera: CameraMode;
   quality: Quality;
   /** Som ligado e volume geral (0 a 1); ficam lembrados. */
@@ -186,6 +190,8 @@ export const useStore = create<Store>((set) => ({
   gestures: {},
   signals: {},
   signalNextAt: 0,
+  phraseNextAt: 0,
+  cheers: {},
   camera: 'livre',
   quality: initialQuality(),
   soundOn: load(SOUND_KEY) !== 'nao',

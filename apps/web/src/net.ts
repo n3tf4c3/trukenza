@@ -12,8 +12,16 @@ import {
   DEFAULT_SCENERY,
   parseScenery,
   type SceneryId,
+  MSG_PHRASE,
   MSG_SIGNAL,
+  MSG_TABLE_PHRASE,
   MSG_TABLE_SIGNAL,
+  PHRASE_COOLDOWN_MS,
+  PHRASES,
+  parseTablePhrase,
+  type PhraseGroup,
+  type PhraseId,
+  type TablePhrase,
   SIGNAL_COOLDOWN_MS,
   parseTableSignal,
   type SignalId,
@@ -157,6 +165,22 @@ function shout(seat: number, text: string, big: boolean): void {
   const id = ++shoutId;
   useStore.setState((s) => ({ shouts: [...s.shouts.slice(-3), { id, seat, text, big, at: performance.now() }] }));
   setTimeout(() => useStore.setState((s) => ({ shouts: s.shouts.filter((x) => x.id !== id) })), SHOUT_MS);
+}
+
+/** Gesto de quem fala uma frase rápida; as de copo viram um gole no lugar do gesto. */
+const PHRASE_GESTURE: Record<PhraseGroup, GestureKind> = { provocar: 'canto', parceria: 'quero', mesa: 'vaza' };
+
+/** Frase rápida de alguém sentado: balão pequeno (não conta como canto), gesto ou gole, e a voz do personagem. */
+function sayPhrase({ phrase, seat }: TablePhrase, table: TableView): void {
+  const player = table.players.find((p) => p.seat === seat);
+  if (!player) return;
+  const { text, group, drink } = PHRASES[phrase];
+  const at = performance.now();
+  shout(seat, text, false);
+  if (drink) useStore.setState((s) => ({ cheers: { ...s.cheers, [seat]: at } }));
+  else gesture([seat], PHRASE_GESTURE[group]);
+  speakCall(`frase-${phrase}`, player.character, seat);
+  if (player.id === useStore.getState().me) useStore.setState({ phraseNextAt: at + PHRASE_COOLDOWN_MS });
 }
 
 function gesture(seats: number[], kind: GestureKind, delay = 0): void {
@@ -326,8 +350,9 @@ async function enter(joining: Promise<Room>, failure?: string): Promise<string |
   }
   room = r;
   saveSession(r);
-  useStore.setState({ me: r.sessionId, hand: [], actions: [], playable: [], game: null, selectedCard: null, reconnecting: false, signals: {}, signalNextAt: 0 });
+  useStore.setState({ me: r.sessionId, hand: [], actions: [], playable: [], game: null, selectedCard: null, reconnecting: false, signals: {}, signalNextAt: 0, phraseNextAt: 0, cheers: {} });
   let gameJson = '';
+  let lastPhrase = 0;
   let lastEvent = -1;
   r.onStateChange((s: NetState) => {
     const before = useStore.getState().table;
@@ -367,6 +392,14 @@ async function enter(joining: Promise<Room>, failure?: string): Promise<string |
     useStore.setState({ signals: { ...state.signals, [signal.seat]: { ...signal, at } },
       ...(mine ? { signalNextAt: at + SIGNAL_COOLDOWN_MS } : {}) });
   });
+  r.onMessage(MSG_TABLE_PHRASE, (raw: unknown) => {
+    if (room !== r) return;
+    const said = parseTablePhrase(raw);
+    const table = useStore.getState().table;
+    if (!said || said.id <= lastPhrase || !table) return;
+    lastPhrase = said.id;
+    sayPhrase(said, table);
+  });
   r.onMessage(MSG_REFUSED, (m: { text?: unknown }) => {
     if (typeof m?.text === 'string') useStore.getState().toast(m.text);
   });
@@ -379,7 +412,7 @@ async function enter(joining: Promise<Room>, failure?: string): Promise<string |
     room = null;
     // Recarregar a aba também derruba a conexão: aí a sessão guardada precisa ficar.
     if (!unloading) clearSession();
-    useStore.setState({ me: '', table: null, game: null, hand: [], actions: [], playable: [], reconnecting: false, signals: {}, signalNextAt: 0 });
+    useStore.setState({ me: '', table: null, game: null, hand: [], actions: [], playable: [], reconnecting: false, signals: {}, signalNextAt: 0, phraseNextAt: 0, cheers: {} });
     if (code === CLOSE_IDLE) useStore.getState().toast(IDLE_TEXT);
     else if (code !== CloseCode.CONSENTED && !unloading) useStore.getState().toast('A conexão com a mesa caiu.');
   });
@@ -425,6 +458,15 @@ export function sendSignal(signal: SignalId): void {
       state.game?.winner !== null || hand.folded[seat] || performance.now() < state.signalNextAt) return;
   useStore.setState({ signalNextAt: performance.now() + SIGNAL_COOLDOWN_MS });
   room.send(MSG_SIGNAL, { signal, hand: hand.number });
+}
+
+/** Frase rápida do catálogo; a sala confere cadeira e intervalo, aqui só se evita mandar à toa. */
+export function sendPhrase(phrase: PhraseId): void {
+  const state = useStore.getState();
+  const me = state.table?.players.find((p) => p.id === state.me);
+  if (!room || state.reconnecting || !me || me.seat < 0 || performance.now() < state.phraseNextAt) return;
+  useStore.setState({ phraseNextAt: performance.now() + PHRASE_COOLDOWN_MS });
+  room.send(MSG_PHRASE, { phrase });
 }
 
 export function setReady(ready: boolean): void {

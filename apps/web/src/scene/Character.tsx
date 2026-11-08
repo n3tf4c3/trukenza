@@ -59,6 +59,8 @@ interface CharacterProps {
   partner: [number, number, number] | null;
   /** Instante (performance.now) do canto adversário que esta cadeira precisa responder. */
   challengeAt: number | null;
+  /** Instante (performance.now) em que quem está aqui ergueu o copo numa frase de brinde. */
+  cheerAt: number | null;
 }
 
 const WALK_SPEED = 3.4;
@@ -135,6 +137,7 @@ export function Character(props: CharacterProps) {
     seed: Math.random() * 100,
     idle: null as { kind: IdleKind; at: number } | null,
     nextIdle: 3 + Math.random() * 8,
+    cheerSeen: 0,
     activeSince: 0,
   });
 
@@ -210,6 +213,15 @@ export function Character(props: CharacterProps) {
         idleSound(a.idle.kind, localAvatar.ready ? a.pos.distanceTo(localAvatar.pos) : 2);
       }
       a.nextIdle = clockNow + (calm ? IDLE_GAP[0] + Math.random() * (IDLE_GAP[1] - IDLE_GAP[0]) : 2 + Math.random() * 2);
+    }
+    // Brinde pedido por frase rápida: o gole começa já, se estiver sentado e fora da vez.
+    if (props.cheerAt !== null && props.cheerAt !== a.cheerSeen) {
+      a.cheerSeen = props.cheerAt;
+      if (seatTarget && a.sit > 0.9 && !props.active && now - props.cheerAt < 1500) {
+        a.idle = { kind: 'gole', at: clockNow };
+        idleSound('gole', localAvatar.ready ? a.pos.distanceTo(localAvatar.pos) : 2);
+        a.nextIdle = clockNow + IDLE_GAP[0] + Math.random() * (IDLE_GAP[1] - IDLE_GAP[0]);
+      }
     }
     const idleAge = a.idle ? clockNow - a.idle.at : 0;
     const idle = idlePose(a.idle?.kind, idleAge);
