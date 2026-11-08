@@ -39,17 +39,19 @@ docker compose logs tunel-servidor tunel-cliente | Select-String trycloudflare
 
 Abra `https://<cliente>/?servidor=wss://<servidor>`; o "Copiar convite" já leva o `?servidor=`. Ao terminar: `docker compose --profile tunel down`.
 
-## trukenza.win (túnel nomeado) — pendente
+## trukenza.win (túnel nomeado)
 
-Não feito: depende do titular (painel da Cloudflare). Passos, iguais aos do Riscote:
-1. No painel da Cloudflare (Networking → Tunnels), criar o túnel `trukenza` e copiar o token. Subir o perfil `dominio` antes de criar as rotas.
-2. Rotas do tipo *Published application*: `trukenza.win` → HTTP → `client:8080`; `play.trukenza.win` → HTTP → `server:2580`.
-3. `.env` com `CLOUDFLARE_TUNNEL_TOKEN=<token>` e `TRUKENZA_IP_HEADER=cf-connecting-ip`.
-4. `docker compose --profile dominio up -d --build`.
+No ar desde 2026-11-08: túnel `trukenza`, rodando no Orange Pi (seção abaixo). Página em `https://trukenza.win`, servidor em `wss://play.trukenza.win`. Para refazer, no painel da Cloudflare (Networking → Tunnels, não o menu Zero Trust):
+1. Criar o túnel `trukenza` e copiar só o token (o texto longo depois de `--token`, que começa com `eyJ`). Não instalar nada pelo painel. O painel só libera as rotas depois que o conector liga: subir o perfil `dominio` antes do passo 2.
+2. Rotas do tipo *Published application* (o painel cria o DNS; conferir que o domínio escolhido é `trukenza.win`, o painel sugere outra zona da conta): `trukenza.win` → `http://client:8080`; `play.trukenza.win` → `http://server:2580`.
+3. `.env` (no PC fora do Git; no Pi em `~/trukenza/.env`, modo 600) com `CLOUDFLARE_TUNNEL_TOKEN=<token>`, `TRUKENZA_IP_HEADER=cf-connecting-ip` e `TRUKENZA_MAX_ROOMS=20`.
+4. `docker compose --profile dominio up -d` (no Pi com `--no-build --pull never`).
 
-## Orange Pi — pendente
+O token dá acesso ao túnel: quem o tiver publica qualquer coisa nesses endereços. Se vazar, gerar outro no painel (Rotate token) e trocar nos dois `.env`.
 
-Mesmo processo do Riscote (`riscote/docs/docker.md`, seção Orange Pi): construir aqui, levar as imagens prontas, carregar e subir lá numa pasta própria (`/home/codex/trukenza`), com as portas em `127.0.0.1` e entrada pública só pelo túnel.
+## Orange Pi
+
+Em uso desde 2026-11-08, ao lado do Riscote e do XBrainia: conta `codex` (SSH só por chave, `~/.ssh/orangepi5-codex`), projeto em `/home/codex/trukenza`, portas em `127.0.0.1` e entrada pública só pelo túnel. `TRUKENZA_MAX_ROOMS=20` no `.env` do Pi, por prudência, igual ao Riscote, sem medição de carga ainda (uma mesa aberta: servidor com ~42 MB e menos de 1% de CPU). Para atualizar, construir aqui, levar as imagens prontas e carregar lá:
 
 ```powershell
 docker buildx build --platform linux/arm64 --target server -t trukenza-server:arm64 --load .
@@ -57,7 +59,11 @@ docker buildx build --platform linux/arm64 --target client -t trukenza-client:ar
 docker save --platform linux/arm64 -o trukenza-arm64.tar trukenza-server:arm64 trukenza-client:arm64
 ```
 
-No Pi: conferir o `sha256sum`, `docker load`, `docker tag … :latest` e `docker compose --profile dominio up -d --no-build --pull never`. O servidor não grava nada: não há volume.
+```powershell
+scp -i ~/.ssh/orangepi5-codex trukenza-arm64.tar compose.yaml codex@192.168.15.7:trukenza/
+```
+
+No Pi (`cd ~/trukenza`): conferir o `sha256sum` contra o do PC, `docker load -i trukenza-arm64.tar && rm trukenza-arm64.tar`, `docker tag trukenza-server:arm64 trukenza-server:latest`, `docker tag trukenza-client:arm64 trukenza-client:latest` e `docker compose --profile dominio up -d --no-build --pull never`. O servidor não grava nada: não há volume. Não usar `TRUKENZA_BIND=0.0.0.0` no Pi.
 
 ## Por que a imagem é assim
 

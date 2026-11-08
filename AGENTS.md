@@ -1,6 +1,6 @@
 # Trukenza — guia do projeto
 
-Jogo social de truco espanhol, multiplayer, numa mesa circular 3D no navegador (`https://trukenza.win`, ainda não publicado). Sem apostas e sem dinheiro real. Android e iOS ficam para depois, reaproveitando regras, protocolo e recursos gráficos.
+Jogo social de truco espanhol, multiplayer, numa mesa circular 3D no navegador (`https://trukenza.win`, no ar desde 2026-11-08 pelo Orange Pi). Sem apostas e sem dinheiro real. Android e iOS ficam para depois, reaproveitando regras, protocolo e recursos gráficos.
 
 Estado atual (2026-10-24; mesa viva em 2026-11-08): **Truco Espanhol (Gaudério) jogável de ponta a ponta**, no cenário do bolicho com os personagens modelados no Blender. Dá para criar mesa (2 ou 4, pública ou privada, 12 ou 24 tentos, com ou sem Flor, tempo por jogada), entrar pelo código, pelo link ou pela lista, escolher personagem e cadeira, completar a mesa com o computador (ou jogar só contra ele) e disputar partidas completas: vazas e pardas, Truco/Retruco/Vale Quatro, Envido, Flor (que pode ser escondida), contestações (Flor escondida e Truco antes do Envido), ir ao baralho, placar e histórico. Regras exatas do perfil `GAUDERIO_24` em `docs/regras.md`. Só a modalidade espanhola existe; o motor está separado para receber outras depois.
 
@@ -100,7 +100,7 @@ O servidor roda `.ts` direto no Node (remoção de tipos, sem build). Em `apps/s
 O Chromium headless renderiza por software (~9 qps com uma aba): a caminhada demora mais do que no aparelho. O passo de animação aceita até 0,1 s por quadro. Não rode scripts inline `node -e` que gravam arquivos e disparam processos (o Windows Defender bloqueia); scripts auxiliares vão em arquivo na pasta temporária.
 
 ## Hospedagem
-Docker Desktop neste PC primeiro; depois o Orange Pi 5 que já roda o Riscote e o XBrainia, pelo túnel da Cloudflare (`docs/docker.md`). Portas próprias (2580 e 4180) para conviver com o Riscote (2567 e 4173).
+No ar no Orange Pi 5 (ao lado do Riscote e do XBrainia), pelo túnel nomeado `trukenza` da Cloudflare: `trukenza.win` → cliente, `play.trukenza.win` → servidor (`docs/docker.md`). Atualizar o Pi é deploy: só com pedido do usuário. Docker Desktop neste PC continua para testes. Portas próprias (2580 e 4180) para conviver com o Riscote (2567 e 4173).
 
 ## Limites
 - Não contratar serviços nem alterar o DNS de `trukenza.win` sem pedido explícito.
