@@ -67,6 +67,7 @@ import {
 import { processMetrics } from './metrics.ts';
 import { PlayerSchema, SeatSchema, TableState } from './state.ts';
 import { SignalMemory } from './signalMemory.ts';
+import { BANTER_GAP_MS, botBanter } from './botBanter.ts';
 import { botDelay, botThinkScale } from './botPacing.ts';
 
 function randomCode(): string {
@@ -132,6 +133,13 @@ export class MesaRoom extends Room<{ state: TableState }> {
   private signalAt = new Map<string, number>();
   private phraseId = 0;
   private phraseAt = new Map<string, number>();
+  /** Último evento já comentado e hora do último comentário do computador. */
+  private banterEvent = 0;
+  private banterAt = 0;
+  private banterLast: string | null = null;
+  /** Sorteio e ritmo da conversa do computador; os testes trocam por subclasse. */
+  protected readonly banterRandom: () => number = Math.random;
+  protected readonly banterDelayScale: number = 1;
   private readonly observedSignals = new SignalMemory();
 
   async onCreate(options: CreateRoomOptions = {}): Promise<void> {
@@ -317,6 +325,7 @@ export class MesaRoom extends Room<{ state: TableState }> {
 
   private startMatch(): void {
     this.lastHandSummary = null;
+    this.banterEvent = 0;
     this.signalAt.clear();
     this.observedSignals.clear();
     const r = this.table.rules;
@@ -387,6 +396,26 @@ export class MesaRoom extends Room<{ state: TableState }> {
     this.scheduleDecision();
     this.syncGame();
     for (const client of this.clients) client.send(MSG_HAND, this.handMessage(client.sessionId));
+    if (this.match) this.banter(this.match);
+  }
+
+  /** O computador comenta lances públicos com as frases rápidas: só pelo evento e pelo acaso, nunca pelas cartas. */
+  private banter(m: SpanishMatch): void {
+    const view = m.view();
+    const bots = [...this.table.players.values()].filter(p => p.bot && p.seat >= 0).map(p => p.seat);
+    for (const event of view.events) {
+      if (event.id <= this.banterEvent) continue;
+      this.banterEvent = event.id;
+      const said = botBanter(event, view.seats, bots, this.banterRandom);
+      // Intervalo entre comentários e nunca a mesma frase duas vezes seguidas.
+      if (!said || Date.now() - this.banterAt < BANTER_GAP_MS || said.phrase === this.banterLast) continue;
+      this.banterAt = Date.now();
+      this.banterLast = said.phrase;
+      this.clock.setTimeout(() => {
+        if (this.match !== m || !this.table.occupant(said.seat)?.bot) return;
+        this.broadcast(MSG_TABLE_PHRASE, { phrase: said.phrase, seat: said.seat, id: ++this.phraseId });
+      }, said.delayMs * this.banterDelayScale);
+    }
   }
 
   private clearDecision(): void {

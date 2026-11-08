@@ -14,6 +14,7 @@ import {
   MSG_TABLE_SIGNAL,
   type TablePhrase,
   type TableSignal,
+  PHRASE_IDS,
   MSG_ADD_BOTS,
   MSG_CHARACTER,
   MSG_END,
@@ -64,6 +65,7 @@ beforeAll(async () => {
   const server = new Server({ transport: new WebSocketTransport({ server: http }), greet: false, gracefullyShutdown: false });
   server.define(ROOM_NAME, FastRoom);
   server.define(SPEED_ROOM, SpeedRoom);
+  server.define(CHATTY_ROOM, ChattyRoom);
   t = await boot(server);
   port = (http.address() as { port: number }).port;
 });
@@ -372,6 +374,13 @@ class SpeedRoom extends MesaRoom {
 }
 const SPEED_ROOM = 'mesa-rapida';
 
+/** Computador sempre disposto a comentar, e logo. */
+class ChattyRoom extends SpeedRoom {
+  protected override readonly banterRandom = () => 0;
+  protected override readonly banterDelayScale = 0.01;
+}
+const CHATTY_ROOM = 'mesa-prosa';
+
 const gameOf = (room: MesaRoom): MatchView & { timer: { seconds: number; remainingMs: number | null } } => JSON.parse(room.state.game);
 
 describe('sinais de dupla', () => {
@@ -477,6 +486,23 @@ describe('frases rápidas', () => {
     b.send(MSG_PHRASE, { phrase: 'medo' });
     await new Promise(r => setTimeout(r, 60));
     expect(heard[0]!.length).toBe(2);
+  });
+
+  it('o computador comenta lances públicos pela própria cadeira, com intervalo entre comentários', async () => {
+    const room = (await t.createRoom(CHATTY_ROOM, { seats: 2, bots: true, rules: { goal: 12, turnSeconds: 15 } })) as unknown as MesaRoom;
+    const a = await t.connectTo(room);
+    const heard = inbox<TablePhrase>(a, MSG_TABLE_PHRASE);
+    a.send(MSG_SIT, { seat: 0 });
+    await until(() => room.state.seats.every(s => s.status === SEAT_TAKEN));
+    a.send(MSG_READY, { ready: true });
+    await until(() => !!room.state.players.get(a.sessionId)?.ready);
+    a.send(MSG_START);
+    await until(() => heard.length > 0, 8000);
+    expect(heard[0]!.seat).toBe(1);
+    expect(PHRASE_IDS).toContain(heard[0]!.phrase);
+    // Outros lances logo depois não viram outro comentário: há intervalo mínimo entre eles.
+    await new Promise(r => setTimeout(r, 400));
+    expect(heard.length).toBe(1);
   });
 });
 

@@ -2,11 +2,13 @@
 
     blender -b --factory-startup -P assets/blender/bolicho.py [-- --previa caminho.png]
 
-Gera apps/web/public/modelos/bolicho.glb com quatro nós:
+Gera apps/web/public/modelos/bolicho.glb com estes nós:
 - `cenario`: sala, balcão, prateleiras, mesa e decoração, numa malha só, com sombra de contato assada.
 - `brilhos`: o que emite luz (vidro dos lampiões, fogo, céu da porta e da janela), sem sombra assada.
 - `cadeira`: uma cadeira de palha na origem, assento olhando para -z; o jogo a repete em cada lugar.
 - `copo`: um copo de cerveja com o fundo na origem; o jogo põe um na frente de cada jogador sentado.
+- `bolicheiro` (+ `_braco`, `_cabeca`) e `cachorro` (+ `_cabeca`, `_rabo`): os figurantes; cada peça animada tem a
+  origem no ponto de giro (ombro, pescoço, base do rabo).
 
 Medidas do jogo (`apps/web/src/scene/layout.ts`): mesa na origem com tampo a 0,78 m e raio 1,5 m;
 cadeiras a 2,1 m do centro; quem espera de pé fica num arco a 3,6 m do lado da porta (x negativo),
@@ -68,6 +70,19 @@ M = {
     'pao': mat('pao', '#d8a35a', rough=0.85),
     'farofa': mat('farofa', '#e2c27c', rough=1.0),
     'louca': mat('louca', '#f1ebdc', rough=0.4),
+    # Gente e bicho da casa: o bolicheiro atrás do balcão e o cachorro caramelo na lareira.
+    'pelo_caramelo': mat('pelo_caramelo', '#c98a3e', rough=0.95),
+    'pelo_claro': mat('pelo_claro', '#ecd2a6', rough=0.95),
+    'focinho': mat('focinho', '#2a201c', rough=0.35),
+    'olho': mat('olho', '#1b1512', rough=0.15),
+    'pele': mat('pele', '#d8a07a', rough=0.6),
+    'camisa': mat('camisa', '#e9e2d0', rough=0.9),
+    'avental': mat('avental', '#7d6a52', rough=0.95),
+    'lenco': mat('lenco', '#b5322b', rough=0.8),
+    'bigode': mat('bigode', '#3b2a20', rough=0.9),
+    'chapeu': mat('chapeu', '#2e2723', rough=0.8),
+    'bombacha': mat('bombacha', '#5b5048', rough=0.95),
+    'pano': mat('pano', '#cfd9e0', rough=1.0),
 }
 GLOW = {
     'chama': mat('chama', '#ffb347', emit='#ff9a2e', strength=6.0),
@@ -521,6 +536,98 @@ for dx in (-0.21, 0.21):
 for y in (0.3, 0.55):
     chair.append(box('cadeira_ripa', (0, SH + y, 0.21), (0.42, 0.08 if y > 0.4 else 0.06, 0.025), M['madeira'], bevel=0.01))
 
+# ---------------------------------------------------------------- figurantes: bolicheiro e cachorro (separados)
+# Peças que o jogo anima ficam em nós próprios, modeladas com o ponto de giro na origem; o nó vai para o
+# lugar do giro (cena em apps/web/src/scene/Bolicho.tsx). O resto de cada figura fica num nó parado.
+def figure(name, parts, pivot):
+    o = join(name, parts)
+    # O join guarda a origem da primeira peça; aplica a posição para a origem voltar a ser o giro (0, 0, 0).
+    bpy.ops.object.select_all(action='DESELECT')
+    o.select_set(True)
+    bpy.context.view_layer.objects.active = o
+    bpy.ops.object.transform_apply(location=True, rotation=False, scale=False)
+    o.location = P(*pivot)
+    return o
+
+
+# Bolicheiro no vão da grade do balcão, olhando para a sala (+z), secando um copo com o pano.
+BOL = (0.0, 0.0, -5.15)
+bolicheiro_corpo = [
+    cyl('bol_perna', (-0.1, 0.45, 0), 0.08, 0.9, M['bombacha'], verts=12),
+    cyl('bol_perna', (0.1, 0.45, 0), 0.08, 0.9, M['bombacha'], verts=12),
+    sphere('bol_tronco', (0, 1.25, 0), (0.24, 0.36, 0.2), M['camisa']),
+    sphere('bol_barriga', (0, 1.1, 0.05), (0.27, 0.25, 0.23), M['camisa']),
+    box('bol_avental', (0, 1.02, 0.25), (0.4, 0.5, 0.03), M['avental'], bevel=0.01),
+    box('bol_avental_peito', (0, 1.36, 0.19), (0.26, 0.2, 0.03), M['avental'], bevel=0.01),
+    sphere('bol_lenco', (0, 1.58, 0.06), (0.13, 0.06, 0.12), M['lenco']),
+    sphere('bol_lenco_no', (0, 1.53, 0.17), (0.05, 0.04, 0.03), M['lenco']),
+    # Braço esquerdo segura o copo na frente da barriga.
+    sphere('bol_braco_esq', (-0.29, 1.35, 0.02), (0.075, 0.2, 0.075), M['camisa']),
+    sphere('bol_antebraco_esq', (-0.2, 1.15, 0.17), (0.065, 0.065, 0.16), M['camisa']),
+    sphere('bol_mao_esq', (-0.08, 1.16, 0.3), (0.055, 0.05, 0.055), M['pele']),
+    cyl('bol_copo', (-0.02, 1.22, 0.32), 0.035, 0.11, M['vidro_claro'], verts=12),
+    sphere('bol_ombro_dir', (0.27, 1.47, 0), (0.08, 0.07, 0.08), M['camisa']),
+]
+bolicheiro_braco = [
+    sphere('bol_braco_dir', (0, -0.17, 0), (0.075, 0.2, 0.075), M['camisa']),
+    sphere('bol_antebraco_dir', (-0.06, -0.35, 0.13), (0.065, 0.065, 0.16), M['camisa']),
+    sphere('bol_mao_dir', (-0.15, -0.34, 0.28), (0.055, 0.05, 0.055), M['pele']),
+    box('bol_pano', (-0.17, -0.31, 0.31), (0.13, 0.1, 0.04), M['pano'], bevel=0.015),
+]
+bolicheiro_cabeca = [
+    sphere('bol_cabeca', (0, 0.17, 0), (0.17, 0.18, 0.17), M['pele']),
+    sphere('bol_nariz', (0, 0.15, 0.17), (0.045, 0.04, 0.045), M['pele'], tint=(1.05, 0.92, 0.88)),
+    sphere('bol_olho', (-0.065, 0.21, 0.145), (0.024, 0.026, 0.02), M['olho']),
+    sphere('bol_olho', (0.065, 0.21, 0.145), (0.024, 0.026, 0.02), M['olho']),
+    box('bol_sobrancelha', (-0.065, 0.255, 0.155), (0.07, 0.016, 0.02), M['bigode'], bevel=0.005),
+    box('bol_sobrancelha', (0.065, 0.255, 0.155), (0.07, 0.016, 0.02), M['bigode'], bevel=0.005),
+    # Bigodão gaúcho, caído nas pontas.
+    sphere('bol_bigode', (-0.065, 0.1, 0.16), (0.08, 0.03, 0.035), M['bigode'], rot=(0, -0.35, 0)),
+    sphere('bol_bigode', (0.065, 0.1, 0.16), (0.08, 0.03, 0.035), M['bigode'], rot=(0, 0.35, 0)),
+    sphere('bol_orelha', (-0.17, 0.17, 0), (0.03, 0.05, 0.04), M['pele']),
+    sphere('bol_orelha', (0.17, 0.17, 0), (0.03, 0.05, 0.04), M['pele']),
+    cyl('bol_aba', (0, 0.3, 0), 0.27, 0.025, M['chapeu'], verts=24),
+    cyl('bol_copa', (0, 0.39, 0), 0.15, 0.17, M['chapeu'], radius2=0.13, verts=20),
+    cyl('bol_fita', (0, 0.33, 0), 0.152, 0.035, M['couro'], verts=20),
+]
+
+# Cachorro caramelo deitado diante da lareira, de lado para a mesa, focinho para -x.
+DOG = (0.55, 0.0, 4.5)
+cachorro_corpo = [
+    sphere('cao_tronco', (0, 0.15, 0), (0.32, 0.14, 0.16), M['pelo_caramelo']),
+    sphere('cao_peito', (-0.2, 0.13, 0.02), (0.14, 0.11, 0.13), M['pelo_claro']),
+    sphere('cao_quadril', (0.2, 0.16, 0.02), (0.16, 0.14, 0.16), M['pelo_caramelo']),
+    sphere('cao_coxa', (0.2, 0.1, 0.15), (0.14, 0.08, 0.06), M['pelo_caramelo'], tint=(0.92, 0.9, 0.88)),
+    sphere('cao_pata_tras', (0.04, 0.03, 0.17), (0.07, 0.03, 0.04), M['pelo_claro']),
+]
+for dz in (-0.07, 0.07):
+    cachorro_corpo.append(cyl('cao_perna', (-0.4, 0.045, dz), 0.04, 0.26, M['pelo_caramelo'], axis='x', verts=10))
+    cachorro_corpo.append(sphere('cao_pata', (-0.55, 0.035, dz), (0.055, 0.035, 0.045), M['pelo_claro']))
+cachorro_cabeca = [
+    sphere('cao_pescoco', (0.02, -0.02, 0), (0.1, 0.1, 0.11), M['pelo_caramelo']),
+    sphere('cao_cabeca', (-0.1, 0.06, 0), (0.13, 0.12, 0.12), M['pelo_caramelo']),
+    sphere('cao_focinho', (-0.22, 0.02, 0), (0.09, 0.065, 0.075), M['pelo_claro']),
+    sphere('cao_nariz', (-0.305, 0.045, 0), (0.025, 0.02, 0.03), M['focinho']),
+    sphere('cao_olho', (-0.195, 0.1, -0.058), (0.02, 0.022, 0.02), M['olho']),
+    sphere('cao_olho', (-0.195, 0.1, 0.058), (0.02, 0.022, 0.02), M['olho']),
+    # Orelhas caídas, um pouco mais escuras.
+    sphere('cao_orelha', (-0.05, 0.08, -0.12), (0.06, 0.1, 0.022), M['pelo_caramelo'], rot=(0.35, 0, 0), tint=(0.78, 0.72, 0.66)),
+    sphere('cao_orelha', (-0.05, 0.08, 0.12), (0.06, 0.1, 0.022), M['pelo_caramelo'], rot=(-0.35, 0, 0), tint=(0.78, 0.72, 0.66)),
+]
+cachorro_rabo = [
+    cyl('cao_rabo', (0.12, 0.02, 0), 0.03, 0.24, M['pelo_caramelo'], axis='x', radius2=0.018, verts=10),
+    sphere('cao_rabo_ponta', (0.245, 0.02, 0), (0.03, 0.022, 0.022), M['pelo_claro']),
+]
+
+figurantes = [
+    figure('bolicheiro', bolicheiro_corpo, BOL),
+    figure('bolicheiro_braco', bolicheiro_braco, (BOL[0] + 0.27, 1.5, BOL[2])),
+    figure('bolicheiro_cabeca', bolicheiro_cabeca, (BOL[0], 1.62, BOL[2])),
+    figure('cachorro', cachorro_corpo, DOG),
+    figure('cachorro_cabeca', cachorro_cabeca, (DOG[0] - 0.36, 0.2, DOG[2])),
+    figure('cachorro_rabo', cachorro_rabo, (DOG[0] + 0.34, 0.18, DOG[2])),
+]
+
 # ---------------------------------------------------------------- montagem, sombra assada e exportação
 cenario = join('cenario', scene_parts)
 box_uv(cenario)
@@ -530,12 +637,12 @@ box_uv(brilhos)  # o céu ganha o degradê pela altura, em metros
 cadeira = join('cadeira', chair)
 copo = join('copo', cup)
 box_uv(cadeira, scale=2.0)
-for o in (brilhos, cadeira, copo):
+for o in (brilhos, cadeira, copo, *figurantes):
     o.data.color_attributes.active_color = o.data.color_attributes['Col']
 
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
-export(OUT, [cenario, brilhos, cadeira, copo])
-tris = sum(len(p.vertices) - 2 for o in (cenario, brilhos, cadeira, copo) for p in o.data.polygons)
+export(OUT, [cenario, brilhos, cadeira, copo, *figurantes])
+tris = sum(len(p.vertices) - 2 for o in (cenario, brilhos, cadeira, copo, *figurantes) for p in o.data.polygons)
 print(f'BOLICHO: {OUT} ({os.path.getsize(OUT) / 1e6:.2f} MB, {tris} triângulos)')
 
 # Prévia opcional, para conferir sem abrir o jogo.
@@ -549,6 +656,10 @@ if '--previa' in argv:
     sc.collection.objects.link(cam)
     cam.location = P(0.9, 2.2, 3.6)
     target = P(-0.1, 0.9, -1.0)
+    if '--camera' in argv:  # --camera x,y,z,alvo_x,alvo_y,alvo_z (coordenadas do jogo)
+        v = [float(n) for n in argv[argv.index('--camera') + 1].split(',')]
+        cam.location = P(*v[:3])
+        target = P(*v[3:6])
     cam.rotation_euler = (target - cam.location).to_track_quat('-Z', 'Y').to_euler()
     sc.camera = cam
     for name, loc, energy, color in [('lampiao', P(0, LY + 0.12, 0), 250, (1, 0.8, 0.55)), ('fogo', P(0, 0.6, FZ - 0.4), 120, (1, 0.6, 0.3)),

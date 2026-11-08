@@ -178,6 +178,16 @@ function sayPhrase({ phrase, seat }: TablePhrase, table: TableView): void {
   const at = performance.now();
   shout(seat, text, false);
   if (drink) useStore.setState((s) => ({ cheers: { ...s.cheers, [seat]: at } }));
+  // Brinde em roda: no "Saúde!", quase todos à mesa erguem o copo junto, cada um no seu tempo.
+  if (phrase === 'saude') {
+    for (const other of table.players) {
+      if (other.seat < 0 || other.seat === seat || Math.random() > 0.75) continue;
+      setTimeout(() => {
+        if (useStore.getState().table?.code !== table.code) return;
+        useStore.setState((s) => ({ cheers: { ...s.cheers, [other.seat]: performance.now() } }));
+      }, 450 + Math.random() * 900);
+    }
+  }
   else gesture([seat], PHRASE_GESTURE[group]);
   speakCall(`frase-${phrase}`, player.character, seat);
   if (player.id === useStore.getState().me) useStore.setState({ phraseNextAt: at + PHRASE_COOLDOWN_MS });

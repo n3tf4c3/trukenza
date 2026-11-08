@@ -1,7 +1,11 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
+import { PHRASES } from '@trukenza/shared';
+import { useStore } from '../store';
+import { CHAIR_RADIUS, polar, seatAngle } from './layout';
+import { barkeepPose, barkeepYaw, dogPose, dogYaw } from './figurantes';
 import {
   brickMaps,
   burlapMaps,
@@ -18,10 +22,11 @@ import {
 /**
  * O bolicho gaúcho, modelado no Blender (`assets/blender/bolicho.py`) e exportado em
  * `public/modelos/bolicho.glb`: `cenario` (sala, balcão, mesa, petiscos, decoração, com sombra assada nos
- * vértices), `brilhos` (lampiões, fogo, céu), `cadeira` e `copo`. As texturas entram aqui pelo nome do material.
+ * vértices), `brilhos` (lampiões, fogo, céu), `cadeira`, `copo` e os figurantes (bolicheiro e cachorro, em
+ * peças com o giro na origem). As texturas entram aqui pelo nome do material.
  */
 
-export const BOLICHO_URL = '/modelos/bolicho.glb?v=mesa-viva-1';
+export const BOLICHO_URL = '/modelos/bolicho.glb?v=figurantes-1';
 const DRACO = '/draco/';
 
 /** Onde estão as fontes de luz no modelo (mesmas medidas do script do Blender). */
@@ -121,6 +126,7 @@ export function Bolicho() {
     <>
       <primitive object={cenario} />
       <primitive object={brilhos} />
+      <Figurantes />
     </>
   );
 }
@@ -138,3 +144,73 @@ export function useCupModel(): THREE.Object3D {
 }
 
 useGLTF.preload(BOLICHO_URL, DRACO);
+
+const FIGURE_NODES = ['bolicheiro', 'bolicheiro_braco', 'bolicheiro_cabeca', 'cachorro', 'cachorro_cabeca', 'cachorro_rabo'] as const;
+
+/**
+ * O bolicheiro seca o copo atrás do balcão e olha para quem grita ou fala; acena quando pedem uma gelada.
+ * O cachorro cochila na lareira, ergue a cabeça de vez em quando e fica alerta num canto, abanando o rabo.
+ * Só reagem ao que é público (gritos e falas); o sorteio é local, como os gestos ociosos dos personagens.
+ */
+function Figurantes() {
+  const gltf = useGLTF(BOLICHO_URL, DRACO);
+  const parts = useMemo(() => {
+    const nodes = Object.fromEntries(FIGURE_NODES.map((name) => [name, gltf.nodes[name]!])) as Record<(typeof FIGURE_NODES)[number], THREE.Object3D>;
+    for (const node of Object.values(nodes)) dress(node, { cast: true, receive: true });
+    // Rosto do bolicheiro: gira para os lados e depois inclina, sem entortar o pescoço.
+    nodes.bolicheiro_cabeca.rotation.order = 'YXZ';
+    return nodes;
+  }, [gltf]);
+  const mind = useRef({
+    shout: 0, dogAlertUntil: 0, dogLookUntil: 0, nextDogLook: 10, alert: 0, dogYaw: 0,
+    look: [0, 0] as [number, number], lookUntil: 0, nextGlance: 5, nodAt: -9, attention: 0, barkYaw: 0,
+  });
+  useFrame(({ clock }, delta) => {
+    const t = clock.elapsedTime;
+    const dt = Math.min(delta, 0.1);
+    const m = mind.current;
+    const { shouts, speaking, table } = useStore.getState();
+    const seatAt = (seat: number): [number, number] => {
+      const [x, , z] = polar(seatAngle(seat, table?.seatCount ?? 2), CHAIR_RADIUS);
+      return [x, z];
+    };
+    const last = shouts.at(-1);
+    if (last && last.id !== m.shout) {
+      m.shout = last.id;
+      if (last.big) m.dogAlertUntil = t + 3.5;
+      m.look = seatAt(last.seat);
+      m.lookUntil = t + (last.big ? 3 : 2);
+      if (last.text === PHRASES.gelada.text) m.nodAt = t + 0.4;
+    }
+    if (speaking) {
+      m.look = seatAt(speaking.seat);
+      m.lookUntil = Math.max(m.lookUntil, t + 0.6);
+    }
+    if (t > m.nextDogLook) {
+      m.dogLookUntil = t + 2.5;
+      m.nextDogLook = t + 12 + Math.random() * 18;
+    }
+    if (t > m.nextGlance) {
+      if (t > m.lookUntil) {
+        m.look = [0, 0];
+        m.lookUntil = t + 2;
+      }
+      m.nextGlance = t + 6 + Math.random() * 8;
+    }
+    const alertTarget = t < m.dogAlertUntil ? 1 : t < m.dogLookUntil ? 0.6 : 0;
+    m.alert = THREE.MathUtils.damp(m.alert, alertTarget, 3, dt);
+    m.dogYaw = THREE.MathUtils.damp(m.dogYaw, alertTarget ? dogYaw([0, 0]) * (alertTarget < 1 ? 0.5 : 1) : 0, 2.5, dt);
+    const dog = dogPose(t, m.alert);
+    parts.cachorro.scale.y = dog.breath;
+    parts.cachorro_cabeca.rotation.set(0, m.dogYaw, dog.pitch);
+    parts.cachorro_rabo.rotation.set(0, dog.tailWag, dog.tailLift);
+
+    const attending = t < m.lookUntil;
+    m.attention = THREE.MathUtils.damp(m.attention, attending ? 1 : 0, 4, dt);
+    m.barkYaw = THREE.MathUtils.damp(m.barkYaw, attending ? barkeepYaw(m.look) : 0, 4, dt);
+    const bar = barkeepPose(t, m.attention, t - m.nodAt);
+    parts.bolicheiro_cabeca.rotation.set(bar.pitch, m.barkYaw, 0);
+    parts.bolicheiro_braco.rotation.set(bar.armX, bar.armY, 0);
+  });
+  return <>{FIGURE_NODES.map((name) => <primitive key={name} object={parts[name]} />)}</>;
+}

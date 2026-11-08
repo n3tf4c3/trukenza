@@ -265,7 +265,7 @@ code {
   inset: 0;
   pointer-events: none;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   grid-template-columns: 1fr auto;
   grid-template-areas: 'barra barra' '. jogadores' 'acoes acoes';
   padding: max(0.5rem, env(safe-area-inset-top)) max(0.5rem, env(safe-area-inset-right)) max(0.5rem, env(safe-area-inset-bottom))
@@ -391,6 +391,9 @@ button.encerrar-aviso { background: #542820; border: 1px solid #d58c77; color: #
 .jogadores {
   grid-area: jogadores;
   align-self: start;
+  /* Encolhe e rola quando as ações da espera ocupam a altura toda: as ações nunca saem da tela. */
+  max-height: 100%;
+  overflow-y: auto;
   width: min(270px, 42vw);
   background: rgba(255, 249, 233, 0.94);
   color: var(--tinta);

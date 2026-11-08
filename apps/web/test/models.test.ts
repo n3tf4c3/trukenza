@@ -42,3 +42,26 @@ test('o bolicho entrega cenário, cadeira e o copo que vai para a mão nos goles
   const materials = new Set(doc.materials.map((m: { name: string }) => m.name));
   for (const m of ['cerveja', 'espuma', 'carne', 'pao']) assert.ok(materials.has(m), `material ausente: ${m}`);
 });
+
+test('bolicheiro e cachorro vêm em peças com o nó no ponto de giro que a cena anima', async () => {
+  const { BARKEEP_NECK, DOG_NECK } = await import('../src/scene/figurantes.ts');
+  const glb = readFileSync(new URL('../public/modelos/bolicho.glb', import.meta.url));
+  const doc = JSON.parse(glb.subarray(20, 20 + glb.readUInt32LE(12)).toString('utf8'));
+  const at = (name: string) => {
+    const node = doc.nodes.find((n: { name: string }) => n.name === name);
+    assert.ok(node, `nó ausente: ${name}`);
+    return (node.translation ?? [0, 0, 0]) as [number, number, number];
+  };
+  const near = (a: number, b: number) => Math.abs(a - b) < 1e-3;
+  const dog = at('cachorro_cabeca');
+  assert.ok(near(dog[0], DOG_NECK[0]) && near(dog[2], DOG_NECK[1]), `pescoço do cachorro em ${dog}`);
+  const head = at('bolicheiro_cabeca');
+  assert.ok(near(head[0], BARKEEP_NECK[0]) && near(head[2], BARKEEP_NECK[1]) && head[1] > 1.4, `pescoço do bolicheiro em ${head}`);
+  // Rabo atrás do corpo, braço no ombro, corpos no chão.
+  assert.ok(at('cachorro_rabo')[0] > at('cachorro')[0] && near(at('cachorro')[1], 0));
+  assert.ok(at('bolicheiro_braco')[1] > 1.3 && near(at('bolicheiro')[1], 0));
+  // Longe da mesa, das cadeiras e do caminho de quem chega pela porta.
+  for (const name of ['cachorro', 'bolicheiro']) assert.ok(Math.hypot(at(name)[0], at(name)[2]) > 4, name);
+  const materials = new Set(doc.materials.map((m: { name: string }) => m.name));
+  for (const m of ['pelo_caramelo', 'pele', 'camisa', 'lenco', 'chapeu']) assert.ok(materials.has(m), `material ausente: ${m}`);
+});
