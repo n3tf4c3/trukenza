@@ -8,11 +8,21 @@ import {
   MSG_ADD_BOTS,
   MSG_CHARACTER,
   MSG_ACTION,
+  MSG_SCENERY,
+  DEFAULT_SCENERY,
+  parseScenery,
+  type SceneryId,
+  MSG_SIGNAL,
+  MSG_TABLE_SIGNAL,
+  SIGNAL_COOLDOWN_MS,
+  parseTableSignal,
+  type SignalId,
   MSG_END,
   MSG_HAND,
   MSG_READY,
   MSG_REFUSED,
   MSG_REMATCH,
+  MSG_REMATCH_READY,
   MSG_REMOVE_BOT,
   MSG_RULES,
   MSG_SIT,
@@ -29,6 +39,7 @@ import {
   parseName,
   parseRoomList,
   parseRules,
+  saveSessionOnReconnect,
   sessionForServer,
   type CharacterId,
   type CreateRoomOptions,
@@ -41,15 +52,20 @@ import {
 } from '@trukenza/shared';
 import { useStore, type PlayerView, type TableView } from './store';
 import { dealSound, pointsSound, sfx } from './sound';
+import { speakCall, stopVoices } from './voice';
+import type { GestureKind } from './performance';
+import { eventCursor, validSelection } from './handExperience';
 
 /** Forma do estado sincronizado (o cliente decodifica por reflexão, sem importar o schema do servidor). */
 interface NetState {
+  scenery?: string;
   seatCount: number;
   phase: string;
   hostId: string;
   goal: number;
   flor: boolean;
   turnSeconds: number;
+  botDifficulty?: string;
   game: string;
   players: { forEach(cb: (p: Omit<PlayerView, 'id' | 'character' | 'bot'> & { character: string; bot?: boolean }, id: string) => void): void };
   seats: { forEach(cb: (s: { status: string; playerId: string }) => void): void };
@@ -114,10 +130,11 @@ function snapshot(r: Room, s: NetState): TableView {
   });
   return {
     code: r.roomId,
+    scenery: parseScenery(s.scenery) ?? DEFAULT_SCENERY,
     seatCount: s.seatCount,
     phase: s.phase === PHASE_PLAYING ? PHASE_PLAYING : PHASE_WAITING,
     hostId: s.hostId,
-    rules: parseRules({ goal: s.goal, flor: s.flor, turnSeconds: s.turnSeconds }),
+    rules: parseRules({ goal: s.goal, flor: s.flor, turnSeconds: s.turnSeconds, botDifficulty: s.botDifficulty }),
     players,
     seats,
   };
@@ -142,9 +159,12 @@ function shout(seat: number, text: string, big: boolean): void {
   setTimeout(() => useStore.setState((s) => ({ shouts: s.shouts.filter((x) => x.id !== id) })), SHOUT_MS);
 }
 
-function gesture(seats: number[], kind: 'canto' | 'vitoria'): void {
-  const at = performance.now();
-  useStore.setState((s) => ({ gestures: { ...s.gestures, ...Object.fromEntries(seats.map((seat) => [seat, { kind, at }])) } }));
+function gesture(seats: number[], kind: GestureKind, delay = 0): void {
+  const at = performance.now() + delay;
+  useStore.setState((s) => ({ gestures: { ...s.gestures, ...Object.fromEntries(seats.map((seat) => {
+    const previous = s.gestures[seat];
+    return [seat, { kind, at, ...(delay && previous ? { previous: { kind: previous.kind, at: previous.at } } : {}) }];
+  })) } }));
 }
 
 /** Encena um acontecimento público: grito, gesto, aviso e som. Nada daqui revela carta escondida. */
@@ -154,28 +174,47 @@ function stage(e: MatchEvent, game: GameView, table: TableView): void {
   const { toast, me } = useStore.getState();
   const mySeat = table.players.find((p) => p.id === me)?.seat ?? -1;
   const myTeam = mySeat >= 0 ? teamOfSeat(mySeat) : null;
+  const say = (call: string, seat: number) => speakCall(call, table.players.find(p => p.seat === seat)?.character ?? DEFAULT_CHARACTER, seat);
   switch (e.kind) {
     case 'nova-mao':
+      stopVoices();
+      useStore.setState({ gestures: {}, signals: {} });
       sfx('embaralhar');
       dealSound(game.seats, 1.05);
       return;
     case 'carta':
+      gesture([e.seat], 'jogar');
       sfx('carta');
       return;
     case 'canto':
       shout(e.seat, SHOUTS[e.call] ?? e.call, true);
       gesture([e.seat], 'canto');
+      say(e.call, e.seat);
       sfx('canto');
       return;
     case 'resposta':
       shout(e.seat, SHOUTS[e.answer] ?? e.answer, false);
+      gesture([e.seat], e.answer === 'quero' ? 'quero' : 'recusa');
+      say(e.answer, e.seat);
       sfx(e.answer === 'quero' ? 'quero' : 'nao-quero');
       return;
     case 'baralho':
       shout(e.seat, 'Fui ao baralho', false);
+      gesture([e.seat], 'recusa');
+      say('baralho', e.seat);
       sfx('recolher');
       return;
     case 'vaza':
+      if (e.winnerSeat !== null) {
+        // A reação começa quando a carta termina o voo; sem timer sobrevivendo à sala.
+        useStore.setState(s => {
+          const previous = s.gestures[e.winnerSeat!];
+          return { gestures: { ...s.gestures, [e.winnerSeat!]: {
+            kind: 'vaza', at: performance.now() + 450,
+            ...(previous ? { previous: { kind: previous.kind, at: previous.at } } : {}),
+          } } };
+        });
+      }
       // Depois de a última carta pousar.
       if (e.outcome === 'parda') {
         toast(`Vaza ${e.trick + 1}: parda!`);
@@ -210,6 +249,7 @@ function stage(e: MatchEvent, game: GameView, table: TableView): void {
       const against = team(e.team);
       shout(e.seat, e.about === 'flor' ? 'CONTESTO A FLOR!' : 'CONTESTO!', true);
       gesture([e.seat], 'canto');
+      say(e.about === 'flor' ? 'contestar-flor' : 'contestar', e.seat);
       sfx('canto');
       if (e.value) pointsSound(e.value, 0.6);
       if (e.about === 'truco') toast(`Truco antes do Envido contestado: o Envido queimou${e.value ? ` e ${against} perde ${e.value}` : ''}.`);
@@ -225,7 +265,9 @@ function stage(e: MatchEvent, game: GameView, table: TableView): void {
         gesture(
           Array.from({ length: game.seats }, (_, s) => s).filter((s) => teamOfSeat(s) === e.winnerTeam),
           'vitoria',
+          500,
         );
+        gesture(Array.from({ length: game.seats }, (_, s) => s).filter(s => teamOfSeat(s) !== e.winnerTeam), 'derrota', 500);
       }
       return;
     case 'fim-partida':
@@ -274,7 +316,7 @@ async function enter(joining: Promise<Room>, failure?: string): Promise<string |
   }
   room = r;
   saveSession(r);
-  useStore.setState({ me: r.sessionId, hand: [], actions: [], playable: [], game: null, reconnecting: false });
+  useStore.setState({ me: r.sessionId, hand: [], actions: [], playable: [], game: null, selectedCard: null, reconnecting: false, signals: {}, signalNextAt: 0 });
   let gameJson = '';
   let lastEvent = -1;
   r.onStateChange((s: NetState) => {
@@ -285,10 +327,8 @@ async function enter(joining: Promise<Room>, failure?: string): Promise<string |
     if (s.game === gameJson) return;
     gameJson = s.game ?? '';
     const game = parseGame(gameJson);
-    // Ao entrar (ou voltar) no meio da partida, o que já aconteceu não é encenado de novo.
-    if (game && lastEvent < 0) lastEvent = game.events.at(-1)?.id ?? 0;
-    if (!game) lastEvent = -1;
-    useStore.setState({ game });
+    lastEvent = eventCursor(useStore.getState().game, game, lastEvent);
+    useStore.setState({ game, ...(!game ? { signals: {}, signalNextAt: 0 } : {}) });
     if (game) {
       for (const e of game.events) if (e.id > lastEvent) stage(e, game, table);
       lastEvent = Math.max(lastEvent, game.events.at(-1)?.id ?? 0);
@@ -302,19 +342,34 @@ async function enter(joining: Promise<Room>, failure?: string): Promise<string |
       actions: strings(m?.actions),
       playable: strings(m?.playable),
       handVersion: typeof m?.version === 'number' ? m.version : 0,
+      selectedCard: null,
     });
+  });
+  r.onMessage(MSG_TABLE_SIGNAL, (raw: unknown) => {
+    if (room !== r) return;
+    const signal = parseTableSignal(raw);
+    const state = useStore.getState();
+    if (!signal || state.table?.seatCount !== 4 || state.game?.hand?.number !== signal.hand ||
+        state.game.hand.ended || state.game.winner !== null ||
+        (state.signals[signal.seat]?.id ?? 0) >= signal.id) return;
+    const at = performance.now();
+    const mine = state.table.players.find(p => p.id === state.me)?.seat === signal.seat;
+    useStore.setState({ signals: { ...state.signals, [signal.seat]: { ...signal, at } },
+      ...(mine ? { signalNextAt: at + SIGNAL_COOLDOWN_MS } : {}) });
   });
   r.onMessage(MSG_REFUSED, (m: { text?: unknown }) => {
     if (typeof m?.text === 'string') useStore.getState().toast(m.text);
   });
-  r.onDrop(() => useStore.setState({ reconnecting: true }));
+  r.onDrop(() => useStore.setState({ reconnecting: true, selectedCard: null }));
   r.onReconnect(() => useStore.setState({ reconnecting: false }));
+  // O token troca a cada reconexão: recarregar a aba depois de uma queda precisa do novo.
+  saveSessionOnReconnect(r, () => room === r, saveSession);
   r.onLeave((code: number) => {
     if (room !== r) return;
     room = null;
     // Recarregar a aba também derruba a conexão: aí a sessão guardada precisa ficar.
     if (!unloading) clearSession();
-    useStore.setState({ me: '', table: null, game: null, hand: [], actions: [], playable: [], reconnecting: false });
+    useStore.setState({ me: '', table: null, game: null, hand: [], actions: [], playable: [], reconnecting: false, signals: {}, signalNextAt: 0 });
     if (code === CLOSE_IDLE) useStore.getState().toast(IDLE_TEXT);
     else if (code !== CloseCode.CONSENTED && !unloading) useStore.getState().toast('A conexão com a mesa caiu.');
   });
@@ -327,8 +382,8 @@ window.addEventListener('pagehide', () => {
 });
 
 /** Com `bots`, o computador ocupa as outras cadeiras assim que você chega (mesa privada). */
-export function createRoom(seats: SeatCount, open: boolean, bots: boolean, rules: RoomRules): Promise<string | null> {
-  const options: CreateRoomOptions = { ...joinOptions(), seats, open: open && !bots, bots, rules };
+export function createRoom(seats: SeatCount, open: boolean, bots: boolean, rules: RoomRules, scenery: SceneryId = DEFAULT_SCENERY): Promise<string | null> {
+  const options: CreateRoomOptions = { ...joinOptions(), seats, open: open && !bots, bots, rules, scenery };
   return enter(sdk.create(ROOM_NAME, options));
 }
 
@@ -352,6 +407,16 @@ export function stand(): void {
   room?.send(MSG_STAND);
 }
 
+export function sendSignal(signal: SignalId): void {
+  const state = useStore.getState();
+  const seat = state.table?.players.find(p => p.id === state.me)?.seat ?? -1;
+  const hand = state.game?.hand;
+  if (!room || state.reconnecting || state.table?.seatCount !== 4 || seat < 0 || !hand || hand.ended ||
+      state.game?.winner !== null || hand.folded[seat] || performance.now() < state.signalNextAt) return;
+  useStore.setState({ signalNextAt: performance.now() + SIGNAL_COOLDOWN_MS });
+  room.send(MSG_SIGNAL, { signal, hand: hand.number });
+}
+
 export function setReady(ready: boolean): void {
   room?.send(MSG_READY, { ready });
 }
@@ -370,14 +435,37 @@ export function sendAction(type: string, card?: Card): void {
   room?.send(MSG_ACTION, { type, card: card ? cardId(card) : undefined, version: useStore.getState().handVersion });
 }
 
-/** Anfitrião, na espera: regras da partida. */
-export function setRules(rules: RoomRules): void {
-  room?.send(MSG_RULES, rules);
+export function selectCard(card: Card): void {
+  const s = useStore.getState();
+  const id = cardId(card);
+  if (s.reconnecting || !s.game?.hand || s.game.winner !== null || s.game.hand.ended || !s.playable.includes(id)) return;
+  useStore.setState({ selectedCard: { id, version: s.handVersion } });
+}
+
+export function playSelectedCard(): void {
+  const s = useStore.getState();
+  const id = validSelection(s.selectedCard, s.handVersion, s.playable);
+  if (!id || s.reconnecting || !s.game?.hand || s.game.winner !== null || s.game.hand.ended) return;
+  useStore.setState({ selectedCard: null });
+  sendAction('jogar', parseCardId(id)!);
+}
+
+/** Anfitrião, na espera: só os campos mudados; o servidor junta às regras atuais (`parseRules(raw, atuais)`). */
+export function setRules(patch: Partial<RoomRules>): void {
+  room?.send(MSG_RULES, patch);
+}
+
+export function setScenery(scenery: SceneryId): void {
+  room?.send(MSG_SCENERY, { scenery });
 }
 
 /** Anfitrião, com a partida terminada: outra partida com as mesmas cadeiras. */
 export function rematch(): void {
   room?.send(MSG_REMATCH);
+}
+
+export function setRematchReady(ready: boolean): void {
+  room?.send(MSG_REMATCH_READY, { ready });
 }
 
 export function endMatch(): void {

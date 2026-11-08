@@ -1,4 +1,5 @@
 import { parseCharacter, type CharacterId } from './characters.ts';
+import type { SceneryId } from './scenery.ts';
 
 export const ROOM_NAME = 'mesa';
 
@@ -21,6 +22,7 @@ export const MSG_START = 'comecar';
 export const MSG_END = 'encerrar';
 /** Só o anfitrião, com a partida terminada: começa outra com as mesmas cadeiras. */
 export const MSG_REMATCH = 'revanche';
+export const MSG_REMATCH_READY = 'pronto-revanche';
 /** Só o anfitrião, na espera: `RoomRules` (meta, Flor, tempo). Ficam travadas durante a partida. */
 export const MSG_RULES = 'regras';
 /**
@@ -57,6 +59,8 @@ export interface RoomRules {
   flor: boolean;
   /** Segundos para cada jogada ou resposta; ao acabar, o computador joga pela pessoa. */
   turnSeconds: number;
+  /** Ausente em clientes antigos: equilibrado. */
+  botDifficulty?: 'tranquilo' | 'equilibrado' | 'competitivo';
 }
 
 export const TURN_SECONDS = [15, 30, 60] as const;
@@ -69,6 +73,8 @@ export function parseRules(raw: unknown, base: RoomRules = DEFAULT_RULES): RoomR
     goal: r.goal === 12 || r.goal === 24 ? r.goal : base.goal,
     flor: typeof r.flor === 'boolean' ? r.flor : base.flor,
     turnSeconds: (TURN_SECONDS as readonly unknown[]).includes(r.turnSeconds) ? (r.turnSeconds as number) : base.turnSeconds,
+    ...((r.botDifficulty === 'tranquilo' || r.botDifficulty === 'equilibrado' || r.botDifficulty === 'competitivo')
+      ? { botDifficulty: r.botDifficulty } : base.botDifficulty ? { botDifficulty: base.botDifficulty } : {}),
   };
 }
 
@@ -99,6 +105,7 @@ export interface JoinOptions {
 }
 
 export interface CreateRoomOptions extends JoinOptions {
+  scenery?: SceneryId;
   seats?: SeatCount;
   /** Sala pública: aparece com código e nomes na lista. Sem o campo, a sala é privada. */
   open?: boolean;
@@ -228,4 +235,22 @@ export function sessionForServer(raw: unknown, server: string): SavedSession | n
   if (typeof s.server !== 'string' || typeof s.code !== 'string' || typeof s.token !== 'string') return null;
   if (s.server !== normalizeServerUrl(server) || !s.token) return null;
   return { server: s.server, code: s.code, token: s.token };
+}
+
+/**
+ * Regrava a sessão guardada depois de cada reconexão automática: o token muda a cada uma, e o guardado na
+ * entrada deixa de valer. O SDK (0.18) avisa `onReconnect` antes de trocar o token, então gravar dentro do
+ * aviso guardaria o antigo; grava numa microtarefa, já com o novo, e só se a sala ainda for a ativa.
+ * Conferir essa ordem ao atualizar o SDK (há teste com o SDK real em `apps/server/test/mesa.test.ts`).
+ */
+export function saveSessionOnReconnect<R extends { onReconnect(cb: () => void): unknown }>(
+  room: R,
+  isActive: () => boolean,
+  save: (room: R) => void,
+): void {
+  room.onReconnect(() => {
+    void Promise.resolve().then(() => {
+      if (isActive()) save(room);
+    });
+  });
 }

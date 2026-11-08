@@ -129,6 +129,13 @@ export type MatchEvent = EventBody & { id: number };
 /** O que está esperando decisão agora. 'conferencia': mão acabada, com uma Flor escondida para contestar. */
 export type Decision = 'flor' | 'envido' | 'truco' | 'vez' | 'conferencia' | 'nenhuma';
 
+/** Valores públicos da resposta pendente, calculados com as mesmas funções da pontuação. */
+export interface ResponseStakes {
+  kind: 'truco' | 'envido' | 'flor';
+  accepted: number;
+  refused: number;
+}
+
 /** Tudo o que é público na partida: vai igual para todos. As cartas na mão de cada um nunca entram aqui. */
 export interface MatchView {
   version: number;
@@ -154,6 +161,8 @@ export interface MatchView {
     /** Só depois do fim da mão: as cartas mostradas são de quem ganhou o Envido. */
     review: { team: Team; shown: { seat: number; cards: string[] }[] } | null;
     decision: Decision;
+    /** Opcional para clientes poderem receber estados de servidores anteriores. */
+    responseStakes?: ResponseStakes | null;
     /** Quem pode agir agora (a vez, ou quem pode responder ao pedido pendente). */
     actors: number[];
     /** Quanto vale a Falta neste momento. */
@@ -404,8 +413,20 @@ export class SpanishMatch {
     const match = legal.find((a) => a.type === action.type && (a.type !== 'jogar' || (action.card && sameCard(a.card!, action.card))));
     if (!match) return { ok: false, error: action.type === 'jogar' && legal.some((a) => a.type === 'jogar') ? 'carta-invalida' : 'acao-invalida' };
     this.perform(seat, match);
+    this.resumeTurn();
     this.version++;
     return { ok: true };
+  }
+
+  /**
+   * A vez parada em quem foi ao baralho com uma resposta pendente (Flor, Envido ou Truco) só anda depois que
+   * a resposta se resolve: fechar a vaza antes tiraria do parceiro o direito de responder.
+   */
+  private resumeTurn(): void {
+    const h = this.hand!;
+    if (h.ended || h.flor.pending || h.envido.pending || h.truco.pending || this.active(h.turn)) return;
+    if (this.trickComplete()) this.finishTrick();
+    else h.turn = this.nextActive(h.turn);
   }
 
   private perform(seat: number, action: Action): void {
@@ -644,10 +665,7 @@ export class SpanishMatch {
       this.scoring.award(`${h.number}:mao`, h.number, 'truco', 'Ir ao baralho', other(team), value);
       return this.endHand(other(team), 'baralho', value);
     }
-    if (h.turn === seat) {
-      if (this.trickComplete()) this.finishTrick();
-      else h.turn = this.nextActive(seat);
-    }
+    // Se era a vez dele, ela segue em `resumeTurn`, depois de qualquer resposta pendente.
   }
 
   /** Truco antes do Envido contestado: o Envido da mão queima e a equipe infratora perde os tentos da penalidade. */
@@ -726,6 +744,25 @@ export class SpanishMatch {
 
   // ------------------------------------------------------------------ visão pública
 
+  private responseStakes(): ResponseStakes | null {
+    const h = this.hand;
+    if (!h || h.ended || this.winner !== null) return null;
+    const kind = this.decision();
+    const falta = faltaValue(this.config, this.scoring.score);
+    if (kind === 'truco') return { kind, accepted: h.truco.pending!.level, refused: h.truco.level };
+    if (kind === 'envido') return {
+      kind,
+      accepted: envidoAccepted(this.config, h.envido.chain, falta),
+      refused: envidoRefused(this.config, h.envido.chain),
+    };
+    if (kind === 'flor') return {
+      kind,
+      accepted: florStake(this.config, h.flor.announced.length, h.flor.chain, falta),
+      refused: florRefused(this.config, h.flor.announced.length, h.flor.chain, falta),
+    };
+    return null;
+  }
+
   view(): MatchView {
     const h = this.hand;
     return {
@@ -762,6 +799,7 @@ export class SpanishMatch {
         foul: h.foul && { ...h.foul },
         review: h.review && { team: h.review.team, shown: h.review.shown.map((x) => ({ seat: x.seat, cards: x.cards.map(cardId) })) },
         decision: this.decision(),
+        responseStakes: this.responseStakes(),
         actors: this.actors(),
         falta: faltaValue(this.config, this.scoring.score),
         ended: h.ended && { ...h.ended },

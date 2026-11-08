@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { invitedCode, loadSession, resumeRoom } from './net';
 import { useStore } from './store';
 import { Lobby } from './ui/Lobby';
@@ -32,9 +32,12 @@ export function App() {
     });
   }, []);
 
-  // Ao sair da mesa, o último aviso (queda, sala fechada) aparece no lobby.
+  // Ao sair da mesa, o aviso da saída (queda, sala fechada) aparece no lobby; os da partida, não.
+  const roomToast = useRef(0);
   useEffect(() => {
-    if (!inRoom && toasts.length > 0) setStatus(toasts.at(-1)!.text);
+    const last = toasts.at(-1);
+    if (inRoom) roomToast.current = last?.id ?? roomToast.current;
+    else if (last && last.id > roomToast.current) setStatus(last.text);
   }, [inRoom, toasts]);
 
   if (resuming) return <p className="carregando">Voltando para a mesa…</p>;

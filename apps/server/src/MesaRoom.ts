@@ -3,6 +3,8 @@ import { Room, matchMaker, type Client } from '@colyseus/core';
 import {
   ACTION_ERROR_TEXT,
   SpanishMatch,
+  summarizeHand,
+  type HandSummary,
   botAction,
   botContests,
   cardId,
@@ -16,11 +18,20 @@ import {
   DEFAULT_CHARACTER,
   IDLE_MINUTES,
   MSG_ACTION,
+  MSG_SCENERY,
+  DEFAULT_SCENERY,
+  parseScenery,
+  parseSceneryMessage,
+  MSG_SIGNAL,
+  MSG_TABLE_SIGNAL,
+  SIGNAL_COOLDOWN_MS,
+  parseSignalRequest,
   MSG_ADD_BOTS,
   MSG_CHARACTER,
   MSG_END,
   MSG_HAND,
   MSG_REMATCH,
+  MSG_REMATCH_READY,
   MSG_REMOVE_BOT,
   MSG_READY,
   MSG_REFUSED,
@@ -51,6 +62,7 @@ import {
 } from '@trukenza/shared';
 import { processMetrics } from './metrics.ts';
 import { PlayerSchema, SeatSchema, TableState } from './state.ts';
+import { SignalMemory } from './signalMemory.ts';
 
 function randomCode(): string {
   let code = '';
@@ -94,6 +106,7 @@ export class MesaRoom extends Room<{ state: TableState }> {
   /** Duração de um "segundo" do tempo de jogada (os testes encurtam). */
   protected readonly secondMs: number = 1000;
   private table!: Table;
+  private lastHandSummary: HandSummary | null = null;
   private open = false;
   /** Mesa contra o computador: ele ocupa as outras cadeiras quando o anfitrião chega. */
   private vsComputer = false;
@@ -104,7 +117,15 @@ export class MesaRoom extends Room<{ state: TableState }> {
   /** Quando acaba o tempo de quem decide agora (0 = sem relógio na tela), e de quanto era esse tempo. */
   private deadline = 0;
   private deadlineMs = 0;
+  /**
+   * Prazo absoluto da decisão desta versão (relógio de quem decide ou pausa entre mãos). Queda e volta de
+   * alguém reagendam a decisão sem mudar a versão: o prazo continua o mesmo, não recomeça inteiro.
+   */
+  private due: { match: SpanishMatch; version: number; kind: 'relogio' | 'pausa'; at: number } | null = null;
   private idleTimer: Timer | null = null;
+  private signalId = 0;
+  private signalAt = new Map<string, number>();
+  private readonly observedSignals = new SignalMemory();
 
   async onCreate(options: CreateRoomOptions = {}): Promise<void> {
     let code = randomCode();
@@ -117,8 +138,10 @@ export class MesaRoom extends Room<{ state: TableState }> {
     this.maxMessagesPerSecond = 20;
     // Só `true` abre a sala: sem o campo, ela é privada.
     this.open = options.open === true;
+    // A privada sai também do matchmaking por nome (join/joinOrCreate): só entra quem tem o código (joinById).
+    await this.setPrivate(!this.open);
     this.vsComputer = options.bots === true;
-    this.table = new Table(seats, parseRules(options.rules));
+    this.table = new Table(seats, parseRules(options.rules), parseScenery(options.scenery) ?? DEFAULT_SCENERY);
 
     const state = new TableState();
     state.seatCount = seats;
@@ -148,7 +171,15 @@ export class MesaRoom extends Room<{ state: TableState }> {
       const ready = parseReadyMessage(raw);
       return ready === null ? null : this.table.setReady(id, ready);
     });
+    this.handle(MSG_REMATCH_READY, (id, raw) => {
+      const ready = parseReadyMessage(raw);
+      return ready === null ? null : this.table.setRematchReady(id, ready);
+    });
     this.handle(MSG_RULES, (id, raw) => this.table.setRules(id, parseRules(raw, this.table.rules)));
+    this.handle(MSG_SCENERY, (id, raw) => {
+      const scenery = parseSceneryMessage(raw);
+      return scenery ? this.table.setScenery(id, scenery) : null;
+    });
     this.handle(MSG_START, (id) => {
       const result = this.table.start(id);
       if (result === 'ok') this.startMatch();
@@ -158,6 +189,8 @@ export class MesaRoom extends Room<{ state: TableState }> {
       if (id !== this.table.hostId) return 'so-anfitriao';
       if (!this.match || this.table.phase !== PHASE_PLAYING) return 'sem-partida';
       if (this.match.winner === null) return 'partida-em-andamento';
+      const result = this.table.rematch(id);
+      if (result !== 'ok') return result;
       this.startMatch();
       return 'ok';
     });
@@ -167,6 +200,7 @@ export class MesaRoom extends Room<{ state: TableState }> {
       return result;
     });
     this.onMessage(MSG_ACTION, (client, raw) => this.receiveAction(client, raw));
+    this.onMessage(MSG_SIGNAL, (client, raw) => this.receiveSignal(client, raw));
 
     this.touch();
     processMetrics.rooms++;
@@ -262,6 +296,8 @@ export class MesaRoom extends Room<{ state: TableState }> {
 
   /** Saída definitiva: por vontade própria ou fim do prazo de reconexão. No meio da partida, o computador assume. */
   onLeave(client: Client): void {
+    this.signalAt.delete(client.sessionId);
+    this.observedSignals.forget(this.table.players.get(client.sessionId)?.seat ?? -1);
     this.table.leave(client.sessionId);
     processMetrics.players--;
     this.sync();
@@ -271,6 +307,9 @@ export class MesaRoom extends Room<{ state: TableState }> {
   // ------------------------------------------------------------------ partida
 
   private startMatch(): void {
+    this.lastHandSummary = null;
+    this.signalAt.clear();
+    this.observedSignals.clear();
     const r = this.table.rules;
     this.match = new SpanishMatch(gauderio({ goal: r.goal, flor: r.flor }), this.table.seatCount, randomInt(2 ** 31));
     this.match.startHand();
@@ -278,6 +317,7 @@ export class MesaRoom extends Room<{ state: TableState }> {
   }
 
   private stopMatch(): void {
+    this.observedSignals.clear();
     this.match = null;
     this.clearDecision();
     this.state.game = '';
@@ -300,8 +340,28 @@ export class MesaRoom extends Room<{ state: TableState }> {
     this.matchChanged();
   }
 
+  /** Gesto público e passageiro, sem mexer em versão, cartas ou relógio da decisão. */
+  private receiveSignal(client: Client, raw: unknown): void {
+    const request = parseSignalRequest(raw);
+    if (!request) return;
+    const m = this.match;
+    const p = this.table.players.get(client.sessionId);
+    const hand = m?.view().hand;
+    if (!m || this.table.phase !== PHASE_PLAYING || this.table.seatCount !== 4 ||
+        m.winner !== null || !hand || hand.ended || hand.number !== request.hand ||
+        !p || p.seat < 0 || !p.connected || !p.settled || hand.folded[p.seat]) return;
+    const now = Date.now();
+    if (now - (this.signalAt.get(client.sessionId) ?? -Infinity) < SIGNAL_COOLDOWN_MS) return;
+    this.signalAt.set(client.sessionId, now);
+    this.observedSignals.observe(m.view(), p.seat, request.signal);
+    this.touch();
+    // A cadeira vem da sessão, nunca do payload. Todos podem observar, inclusive adversários.
+    this.broadcast(MSG_TABLE_SIGNAL, { ...request, seat: p.seat, id: ++this.signalId });
+  }
+
   /** Depois de toda mudança: agenda a próxima decisão (computador, relógio, pausa) e manda o estado. */
   private matchChanged(): void {
+    if (this.match?.winner !== null && this.match) this.table.prepareRematch();
     this.scheduleDecision();
     this.syncGame();
     for (const client of this.clients) client.send(MSG_HAND, this.handMessage(client.sessionId));
@@ -314,9 +374,21 @@ export class MesaRoom extends Room<{ state: TableState }> {
     this.deadlineMs = 0;
   }
 
-  private setDeadline(ms: number): void {
-    this.deadline = Date.now() + ms;
+  private setDeadline(ms: number, at = Date.now() + ms): void {
+    this.deadline = at;
     this.deadlineMs = ms;
+  }
+
+  /**
+   * Quanto falta para a decisão desta versão vencer: na primeira vez, `ms` inteiros; reagendada na mesma
+   * versão (queda ou volta de alguém), só o que restava do prazo já marcado.
+   */
+  private dueIn(m: SpanishMatch, kind: 'relogio' | 'pausa', ms: number): { delay: number; at: number } {
+    const now = Date.now();
+    const d = this.due;
+    if (d && d.match === m && d.version === m.version && d.kind === kind) return { delay: Math.max(0, d.at - now), at: d.at };
+    this.due = { match: m, version: m.version, kind, at: now + ms };
+    return { delay: ms, at: now + ms };
   }
 
   private seatController(seat: number): { bot: boolean; connected: boolean } {
@@ -346,12 +418,13 @@ export class MesaRoom extends Room<{ state: TableState }> {
         return;
       }
       const pause = reviewers.length > 0 ? this.reviewPauseMs : this.handPauseMs;
-      if (reviewers.length > 0) this.setDeadline(pause);
+      const due = this.dueIn(m, 'pausa', pause);
+      if (reviewers.length > 0) this.setDeadline(pause, due.at);
       this.decisionTimer = this.clock.setTimeout(() => {
         if (this.match !== m || m.version !== version) return;
         m.nextHand();
         this.matchChanged();
-      }, pause);
+      }, due.delay);
       return;
     }
     const actors = m.actors();
@@ -363,8 +436,10 @@ export class MesaRoom extends Room<{ state: TableState }> {
     const actor = botSeat ?? actors[0]!;
     let delay: number;
     if (people.length > 0) {
-      delay = this.table.rules.turnSeconds * this.secondMs;
-      this.setDeadline(delay);
+      const turnMs = this.table.rules.turnSeconds * this.secondMs;
+      const due = this.dueIn(m, 'relogio', turnMs);
+      delay = due.delay;
+      this.setDeadline(turnMs, due.at);
     } else if (botSeat !== undefined) {
       const [lo, hi] = this.botDelayMs;
       delay = lo + Math.floor(this.botRandom() * (hi - lo + 1));
@@ -380,7 +455,7 @@ export class MesaRoom extends Room<{ state: TableState }> {
     if (!m || m.version !== version) return;
     let action: Action;
     try {
-      action = botAction(m, seat, this.botRandom);
+      action = botAction(m, seat, this.botRandom, this.observedSignals.forHand(m.view()), this.table.rules.botDifficulty);
     } catch {
       return;
     }
@@ -408,7 +483,9 @@ export class MesaRoom extends Room<{ state: TableState }> {
       return;
     }
     const remainingMs = this.deadline ? Math.max(0, this.deadline - Date.now()) : null;
-    this.state.game = JSON.stringify({ ...m.view(), timer: { seconds: this.deadlineMs / 1000 || this.table.rules.turnSeconds, remainingMs } });
+    const view = m.view();
+    this.lastHandSummary = summarizeHand(view) ?? this.lastHandSummary;
+    this.state.game = JSON.stringify({ ...view, lastHandSummary: this.lastHandSummary, timer: { seconds: this.deadlineMs / 1000 || this.table.rules.turnSeconds, remainingMs } });
     this.sync();
   }
 
@@ -421,6 +498,8 @@ export class MesaRoom extends Room<{ state: TableState }> {
     s.goal = table.rules.goal;
     s.flor = table.rules.flor;
     s.turnSeconds = table.rules.turnSeconds;
+    s.botDifficulty = table.rules.botDifficulty ?? 'equilibrado';
+    s.scenery = table.scenery;
     for (const id of [...s.players.keys()]) if (!table.players.has(id)) s.players.delete(id);
     for (const p of table.players.values()) {
       let net = s.players.get(p.id);

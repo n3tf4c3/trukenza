@@ -119,13 +119,35 @@ Ao aceitar, os dois lados "cantam" o maior Envido (a tela mostra os dois número
 
 - **Ir ao baralho** (na própria vez, ou para responder a um pedido): o jogador larga as cartas sem mostrá-las.
   - No mano a mano, a outra equipe leva o valor do Truco já estabelecido.
-  - Na dupla, o parceiro continua com as próprias cartas (quem foi ao baralho é pulado). Se a equipe toda for, ela desiste da mão:
+  - Na dupla, o parceiro continua com as próprias cartas (quem foi ao baralho é pulado). Se quem foi era o último a jogar na vaza e há pedido esperando resposta da equipe, a vaza só fecha depois que o parceiro responde. Se a equipe toda for, ela desiste da mão:
     - um Envido ou uma Flor que ela devia responder conta como recusa (pontuado primeiro);
     - depois, a outra equipe leva o valor do Truco.
   - Não dá para ir ao baralho com um pedido da própria equipe esperando resposta.
 - **Recusar** (Não Quero ou Me Achico) resolve só aquela aposta. Só o Truco recusado acaba a mão.
-- **Cair** (perder a conexão): a cadeira e as cartas ficam guardadas por 60 s. Se for a vez dela, o computador decide depois de 12 s; ao voltar, a pessoa recebe as cartas e o estado de volta.
+- **Cair** (perder a conexão): a cadeira e as cartas ficam guardadas por 60 s. Se for a vez dela, o computador decide depois de 12 s; ao voltar, a pessoa recebe as cartas e o estado de volta. Cair e voltar não reinicia o relógio da decisão em curso: o prazo continua o mesmo.
 - **Sair da sala** no meio da partida: o computador assume a mesma cadeira, com as mesmas cartas, e a partida segue.
+
+## Sinais da dupla
+
+Nas mesas de quatro, jogadores sentados podem fazer sinais durante a mão, mesmo fora da vez. Todos à mesa veem o gesto: os adversários podem percebê-lo. O sinal é escolhido manualmente, pode ser blefe e nunca confirma quais cartas o jogador tem. Não muda o turno, o relógio, a aposta ou o placar. Quem foi ao baralho não sinaliza naquela mão.
+
+O menu **Sinais da dupla** mostra o código usado no Trukenza:
+
+| Gesto | Convenção |
+| --- | --- |
+| Sobrancelhas erguidas | Ás de espadas |
+| Piscada de um olho | Ás de paus |
+| Boca puxada à direita / esquerda do personagem | 7 de espadas / 7 de ouros |
+| Lábio inferior mordido | Um 3 |
+| Bico | Um 2 |
+| Boca aberta | Ás de copas ou ouros |
+| Cabeça inclinada | Envido de 27 a 29 |
+| Nariz franzido | Envido de pelo menos 30 |
+| Olhos fechados | Mão fraca |
+
+Referência das convenções: [guia de Truco Gaudério do MegaJogos](https://www.megajogos.com.br/truco-gauderio-online/regras), seção Sinais. Há variações entre mesas; isto não altera o perfil de pontuação do Trukenza.
+
+O gesto dura 1,8 s, com intervalo mínimo de 2,5 s por jogador. Não vira aviso falado, tradução pública nem histórico, e não é repetido ao reconectar. O computador considera o último sinal do parceiro para poupar cartas e decidir cantos; pode acreditar em um blefe. Não consulta cartas alheias para confirmar o gesto. Um sinal de força (ou mão fraca) vale até o autor jogar outra carta; um sinal de Envido vale até o fim da mão, pois usa as três cartas originais. Novo sinal substitui o anterior. Sinais de quem foi ao baralho ou saiu da mesa deixam de ser considerados. Adversários computadores ainda não interpretam os sinais, e o computador não emite gestos voluntários. A mesma estratégia vale quando o computador assume por tempo esgotado ou queda. O servidor aceita apenas os gestos do catálogo, identifica o autor pela sessão e recusa sinais de outra mão, de espectadores, de quem foi ao baralho, fora de partida ou no mano a mano.
 
 ## Placar
 
@@ -133,6 +155,14 @@ Ao aceitar, os dois lados "cantam" o maior Envido (a tela mostra os dois número
 - As contestações entram no histórico como "contestacao": a penalidade com valor negativo (o que de fato saiu do placar) e, na Flor escondida, o ganho de quem contestou.
 - Cada aposta tem uma chave única por mão (não pontua duas vezes), e ao alcançar a meta a partida acaba imediatamente.
 - O histórico guarda, para cada linha, a mão, o tipo, o detalhe ("Truco recusado", "Envido + Real Envido"…), o valor, a equipe e o placar resultante.
+
+## Experiência da partida
+
+- **Resumo da mão:** mostra vencedor, motivo, pontos de cantos e contestações e saldo por equipe. Continua disponível na mão seguinte e após reconectar. A conferência de Flor pode atualizar esse resumo.
+- **Revanche:** após a partida, cada pessoa sentada confirma que está pronta. Computadores ficam prontos automaticamente. O anfitrião começa quando todas as cadeiras estão ocupadas, conectadas e prontas. Código, cadeiras, personagens, cenário e regras são preservados; o placar e o histórico recomeçam.
+- **Computador:** o anfitrião escolhe o nível na criação ou na espera. Tranquilo canta menos e varia as cartas; Equilibrado conserva a estratégia original; Competitivo valoriza as duas melhores cartas e busca empates úteis, considerando as vazas públicas. Todos usam somente as próprias cartas, jogadas públicas e sinais do parceiro; nenhum nível muda as regras. O nível também vale para quem deixa o tempo acabar.
+- **Controles:** toque/clique seleciona a carta; Jogar confirma. No teclado, 1–3 seleciona, Enter joga e Esc cancela. Alteração das ações recebidas ou queda de conexão cancela a seleção. Arrastar a câmera não seleciona uma carta.
+- **Dicas:** aparecem conforme o contexto e podem ser dispensadas, desligadas ou revistas em Opções. Não pausam o relógio.
 
 ## O que o servidor garante
 

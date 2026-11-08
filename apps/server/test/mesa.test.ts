@@ -1,5 +1,5 @@
 import { createServer } from 'node:http';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Server } from '@colyseus/core';
 import { WebSocketTransport } from '@colyseus/ws-transport';
 import type { Room as ClientRoom } from '@colyseus/sdk';
@@ -7,6 +7,10 @@ import { boot, type ColyseusTestServer } from '@colyseus/testing';
 import { ACTION_ERROR_TEXT, parseCardId, type MatchView } from '@trukenza/game-engine';
 import {
   MSG_ACTION,
+  MSG_SCENERY,
+  MSG_SIGNAL,
+  MSG_TABLE_SIGNAL,
+  type TableSignal,
   MSG_ADD_BOTS,
   MSG_CHARACTER,
   MSG_END,
@@ -14,6 +18,7 @@ import {
   MSG_READY,
   MSG_REFUSED,
   MSG_REMATCH,
+  MSG_REMATCH_READY,
   MSG_REMOVE_BOT,
   MSG_RULES,
   MSG_SIT,
@@ -31,10 +36,12 @@ import {
   describeJoinError,
   normalizeRoomCode,
   parseRoomList,
+  saveSessionOnReconnect,
   type CreateRoomOptions,
   type HandMessage,
 } from '@trukenza/shared';
 import { MesaRoom } from '../src/MesaRoom.ts';
+import { SignalMemory } from '../src/signalMemory.ts';
 import { markPeerAddress } from '../src/joinLimit.ts';
 import { serveRoomList } from '../src/roomList.ts';
 
@@ -58,6 +65,7 @@ beforeAll(async () => {
   port = (http.address() as { port: number }).port;
 });
 afterEach(async () => {
+  vi.restoreAllMocks();
   await t.cleanup();
 });
 afterAll(async () => {
@@ -97,6 +105,32 @@ async function seatAll(room: MesaRoom, clients: TestClient[]): Promise<void> {
 }
 
 describe('salas', () => {
+  it('sincroniza cenário na criação, na troca e na entrada tardia; bloqueia visitante e partida', async () => {
+    const room = await newRoom({ seats: 2, scenery: 'praia' });
+    const host = await t.connectTo(room);
+    const guest = await t.connectTo(room);
+    await until(() => guest.state?.scenery === 'praia');
+    const refusals = inbox<{ text: string }>(guest, MSG_REFUSED);
+    guest.send(MSG_SCENERY, { scenery: 'vegas' });
+    await until(() => refusals.length === 1);
+    expect(room.state.scenery).toBe('praia');
+    host.send(MSG_SCENERY, { scenery: 'constructor' });
+    host.send(MSG_SCENERY, { scenery: 'paris' });
+    await until(() => host.state.scenery === 'paris' && guest.state.scenery === 'paris');
+    await seatAll(room, [host, guest]);
+    host.send(MSG_START);
+    await until(() => room.state.phase === PHASE_PLAYING);
+    const hostRefusals = inbox<{ text: string }>(host, MSG_REFUSED);
+    host.send(MSG_SCENERY, { scenery: 'fuji' });
+    await until(() => hostRefusals.length === 1);
+    expect(room.state.scenery).toBe('paris');
+    host.send(MSG_END);
+    await until(() => room.state.phase === PHASE_WAITING);
+    await guest.leave();
+    const newcomer = await t.connectTo(room);
+    await until(() => newcomer.state?.scenery === 'paris');
+  });
+
   it('nasce com código legível, o número de cadeiras pedido e todas livres', async () => {
     const room = await newRoom({ seats: 4 });
     expect(normalizeRoomCode(room.roomId)).toBe(room.roomId);
@@ -119,6 +153,52 @@ describe('salas', () => {
     await t.connectTo(room);
     await t.connectTo(room);
     await expect(t.sdk.joinById(room.roomId)).rejects.toSatisfy((e) => describeJoinError(e).startsWith('Mesa cheia'));
+  });
+
+  it('novos personagens entram e trocam de aparência sentados sem perder cadeira nem pronto', async () => {
+    const room = await newRoom({ seats: 2 });
+    const luis = await t.connectTo(room, { name: 'Luis', character: 'luistesoura' });
+    const gato = await t.connectTo(room, { name: 'Sardinha', character: 'sardinha' });
+    await seatAll(room, [luis, gato]);
+    expect(room.state.players.get(luis.sessionId)).toMatchObject({ character: 'luistesoura', seat: 0, ready: true });
+    expect(room.state.players.get(gato.sessionId)).toMatchObject({ character: 'sardinha', seat: 1, ready: true });
+    gato.send(MSG_CHARACTER, { character: 'gordodofusca' });
+    await until(() => room.state.players.get(gato.sessionId)?.character === 'gordodofusca');
+    expect(room.state.players.get(gato.sessionId)).toMatchObject({ character: 'gordodofusca', seat: 1, ready: true });
+    gato.send(MSG_CHARACTER, { character: 'tiba' });
+    await until(() => room.state.players.get(gato.sessionId)?.character === 'tiba');
+    expect(room.state.players.get(gato.sessionId)).toMatchObject({ character: 'tiba', seat: 1, ready: true });
+    gato.send(MSG_CHARACTER, { character: 'negon' });
+    await until(() => room.state.players.get(gato.sessionId)?.character === 'negon');
+    expect(room.state.players.get(gato.sessionId)).toMatchObject({ character: 'negon', seat: 1, ready: true });
+    gato.send(MSG_CHARACTER, { character: 'sardinha' });
+    await until(() => room.state.players.get(gato.sessionId)?.character === 'sardinha');
+    luis.send(MSG_CHARACTER, { character: 'sardinha' });
+    await until(() => room.state.players.get(luis.sessionId)?.character === 'sardinha');
+    expect(room.state.players.get(luis.sessionId)).toMatchObject({ character: 'sardinha', seat: 0, ready: true });
+    expect(room.state.players.get(gato.sessionId)).toMatchObject({ character: 'sardinha', seat: 1, ready: true });
+  });
+
+  it('sala privada (e contra o computador) só aceita quem tem o código; a pública segue no matchmaking', async () => {
+    const hidden = await newRoom({ seats: 2 });
+    const vsBots = await newRoom({ seats: 4, bots: true });
+    await t.connectTo(hidden, { name: 'Ana' });
+    await t.connectTo(vsBots, { name: 'Bia' });
+    const privateIds = [hidden.roomId, vsBots.roomId];
+    // Sem código: o matchmaking por nome não pode cair numa mesa privada.
+    await expect(t.sdk.join(ROOM_NAME, { name: 'Intruso' })).rejects.toThrow();
+    const created = await t.sdk.joinOrCreate(ROOM_NAME, { name: 'Intruso' });
+    expect(privateIds).not.toContain(created.roomId);
+    await created.leave();
+    // Com o código (convite ou link), entra.
+    const invited = await t.sdk.joinById(hidden.roomId, { name: 'Caio' });
+    expect(invited.roomId).toBe(hidden.roomId);
+    const invitedBots = await t.sdk.joinById(vsBots.roomId, { name: 'Duda' });
+    expect(invitedBots.roomId).toBe(vsBots.roomId);
+    // Controle: a pública continua achável pelo nome.
+    const open = await newRoom({ open: true, seats: 2 });
+    const found = await t.sdk.join(ROOM_NAME, { name: 'Eva' });
+    expect(found.roomId).toBe(open.roomId);
   });
 
   it('a lista mostra código e nomes só da sala pública', async () => {
@@ -227,6 +307,38 @@ describe('partida', () => {
     expect(again[0]!.cards).toEqual(handB[0]!.cards);
   });
 
+  it('a sessão guardada acompanha o token novo da reconexão automática e retoma a cadeira depois', async () => {
+    const room = await newRoom({ seats: 2 });
+    await t.connectTo(room);
+    const b = await t.connectTo(room);
+    const id = b.sessionId;
+    // O SDK só reconecta sozinho salas com 5 s de vida; o teste não espera isso.
+    b.reconnection.minUptime = 0;
+    const saved = [b.reconnectionToken];
+    saveSessionOnReconnect(b, () => true, (r) => saved.push(r.reconnectionToken));
+    const replaced: string[] = [];
+    saveSessionOnReconnect(b, () => false, (r) => replaced.push(r.reconnectionToken));
+
+    // A rede cai sem despedida: o SDK reconecta sozinho e recebe outro token.
+    const drops: number[] = [];
+    b.onDrop((code: number) => drops.push(code));
+    const server = room.clients.find((c) => c.sessionId === id) as unknown as { ref: { terminate(): void } };
+    server.ref.terminate();
+    await until(() => saved.length === 2, 4000);
+    expect(drops).toHaveLength(1);
+    expect(saved[1]).toBe(b.reconnectionToken);
+    expect(saved[1]).not.toBe(saved[0]);
+    expect(replaced).toEqual([]);
+
+    // Recarregar a aba: a conexão cai e a página volta só com o token guardado.
+    b.reconnection.enabled = false;
+    await b.leave(false);
+    await until(() => room.state.players.get(id)?.connected === false);
+    await expect(t.sdk.reconnect(saved[0]!)).rejects.toThrow();
+    const back = await t.sdk.reconnect(saved.at(-1)!);
+    expect(back.sessionId).toBe(id);
+  });
+
   it('sem reconexão no prazo, o computador assume a cadeira e a partida segue; o anfitrião passa adiante', async () => {
     const room = await newRoom({ seats: 2 });
     const a = await t.connectTo(room);
@@ -258,6 +370,75 @@ class SpeedRoom extends MesaRoom {
 const SPEED_ROOM = 'mesa-rapida';
 
 const gameOf = (room: MesaRoom): MatchView & { timer: { seconds: number; remainingMs: number | null } } => JSON.parse(room.state.game);
+
+describe('sinais de dupla', () => {
+  it('todos veem o gesto, a sessão define o autor, e não muda cartas, versão nem relógio', async () => {
+    const observe = vi.spyOn(SignalMemory.prototype, 'observe');
+    const room = await newRoom({ seats: 4, rules: { turnSeconds: 60 } });
+    const clients: TestClient[] = [];
+    for (let i = 0; i < 4; i++) clients.push(await t.connectTo(room));
+    const received = clients.map(c => inbox<TableSignal>(c, MSG_TABLE_SIGNAL));
+    await seatAll(room, clients);
+    clients[0]!.send(MSG_START);
+    await until(() => !!room.state.game);
+    const before = room.state.game;
+    const hand = gameOf(room).hand!.number;
+    clients[0]!.send(MSG_SIGNAL, { signal: 'piscada', hand, seat: 3, card: '1-espadas' });
+    await until(() => received.every(messages => messages.length === 1));
+    expect(received.map(messages => messages[0])).toEqual(Array(4).fill({ signal: 'piscada', hand, seat: 0, id: 1 }));
+    expect(room.state.game).toBe(before);
+    expect(observe).toHaveBeenCalledTimes(1);
+    expect(observe.mock.calls[0]!.slice(1)).toEqual([0, 'piscada']);
+    const memory = observe.mock.instances[0] as SignalMemory;
+    expect(memory.forHand(gameOf(room))).toEqual([{ seat: 0, hand, played: 0, power: 13 }]);
+    clients[0]!.send(MSG_SIGNAL, { signal: 'olhos', hand });
+    // Outro participante pode sinalizar fora da própria vez; serve também como barreira de mensagens.
+    clients[1]!.send(MSG_SIGNAL, { signal: 'sobrancelhas', hand });
+    await until(() => received.every(messages => messages.length === 2));
+    expect(received[0]!.map(x => x.seat)).toEqual([0, 1]);
+    clients[2]!.send(MSG_SIGNAL, { signal: 'bico', hand: hand + 1 });
+    clients[3]!.send(MSG_SIGNAL, { signal: 'desconhecido', hand });
+    await new Promise(r => setTimeout(r, 60));
+    expect(received.every(messages => messages.length === 2)).toBe(true);
+    expect(observe).toHaveBeenCalledTimes(2);
+    clients[0]!.send(MSG_END);
+    await until(() => room.state.game === '');
+    expect(memory.forHand(JSON.parse(before))).toEqual([]);
+    clients[2]!.send(MSG_SIGNAL, { signal: 'bico', hand });
+    await new Promise(r => setTimeout(r, 60));
+    expect(received.every(messages => messages.length === 2)).toBe(true);
+  });
+
+  it('não transmite na espera nem no mano a mano', async () => {
+    const room = await newRoom({ seats: 2 });
+    const a = await t.connectTo(room);
+    const b = await t.connectTo(room);
+    const received = inbox<TableSignal>(b, MSG_TABLE_SIGNAL);
+    a.send(MSG_SIGNAL, { signal: 'olhos', hand: 1 });
+    await seatAll(room, [a, b]);
+    a.send(MSG_START);
+    await until(() => !!room.state.game);
+    a.send(MSG_SIGNAL, { signal: 'olhos', hand: gameOf(room).hand!.number });
+    await new Promise(r => setTimeout(r, 60));
+    expect(received).toEqual([]);
+  });
+
+  it('espectador não sinaliza nem assume a cadeira informada no payload', async () => {
+    const room = await newRoom({ seats: 4, bots: true, rules: { turnSeconds: 60 } });
+    const a = await t.connectTo(room);
+    a.send(MSG_SIT, { seat: 0 });
+    await until(() => room.state.seats.every(s => s.status === SEAT_TAKEN));
+    a.send(MSG_READY, { ready: true });
+    await until(() => !!room.state.players.get(a.sessionId)?.ready);
+    a.send(MSG_START);
+    await until(() => !!room.state.game);
+    const spectator = await t.connectTo(room);
+    const received = inbox<TableSignal>(a, MSG_TABLE_SIGNAL);
+    spectator.send(MSG_SIGNAL, { signal: 'olhos', hand: gameOf(room).hand!.number, seat: 0 });
+    await new Promise(r => setTimeout(r, 60));
+    expect(received).toEqual([]);
+  });
+});
 
 /** Entra 2 pessoas, senta, prontos e começa; devolve os clientes na ordem das cadeiras. */
 async function startTwo(room: MesaRoom): Promise<[TestClient, TestClient]> {
@@ -380,7 +561,7 @@ describe('regras do truco na sala', () => {
   }, 60_000);
 
   it('o anfitrião pede revanche no fim; antes do fim, não', async () => {
-    const room = (await t.createRoom(SPEED_ROOM, { seats: 2, bots: true, rules: { goal: 12, turnSeconds: 15 } })) as unknown as MesaRoom;
+    const room = (await t.createRoom(SPEED_ROOM, { seats: 2, bots: true, scenery: 'praia', rules: { goal: 12, turnSeconds: 15, botDifficulty: 'competitivo' } })) as unknown as MesaRoom;
     const a = await t.connectTo(room);
     const refusals = inbox<{ text: string }>(a, MSG_REFUSED);
     await until(() => room.state.seats[1]!.status === SEAT_TAKEN);
@@ -394,9 +575,60 @@ describe('regras do truco na sala', () => {
     await until(() => refusals.length === 1);
     expect(refusals[0]!.text).toBe(REFUSAL_TEXT['partida-em-andamento']);
     await until(() => gameOf(room).winner !== null, 45_000);
+    expect(room.state.players.get(a.sessionId)!.ready).toBe(false);
+    expect([...room.state.players.values()].filter(p => p.bot).every(p => p.ready)).toBe(true);
+    const summary = JSON.parse(room.state.game).lastHandSummary;
+    expect(summary.number).toBe(gameOf(room).hand!.number);
+    expect(summary.entries.length).toBeGreaterThan(0);
+    a.send(MSG_REMATCH);
+    await until(() => refusals.length === 2);
+    expect(refusals[1]!.text).toBe(REFUSAL_TEXT['faltam-prontos']);
+    a.send(MSG_REMATCH_READY, { ready: true });
+    await until(() => room.state.players.get(a.sessionId)!.ready);
     a.send(MSG_REMATCH);
     await until(() => gameOf(room).winner === null && gameOf(room).score.every((s) => s === 0));
+    expect(room.state.scenery).toBe('praia');
+    expect(room.state.botDifficulty).toBe('competitivo');
+    expect(JSON.parse(room.state.game).lastHandSummary).toBeNull();
   }, 60_000);
+});
+
+describe('relógio da decisão', () => {
+  /** Queda sem despedida e volta pelo token, dentro do prazo de reconexão. */
+  async function dropAndReturn(room: MesaRoom, c: TestClient, seat: number): Promise<TestClient> {
+    const token = c.reconnectionToken;
+    c.reconnection.enabled = false;
+    await c.leave(false);
+    await until(() => room.state.seats[seat]!.status === SEAT_AWAY);
+    const back = await t.sdk.reconnect(token);
+    await until(() => room.state.seats[seat]!.status === SEAT_TAKEN);
+    return back;
+  }
+
+  it('queda e volta (de quem não decide e de quem decide) mantêm o prazo; decisão nova renova', async () => {
+    const room = await newRoom({ seats: 2, rules: { flor: false, turnSeconds: 60 } });
+    const clients = await startTwo(room);
+    const start = gameOf(room);
+    const turn = start.hand!.turn;
+    const first = start.timer.remainingMs!;
+    expect(first).toBeGreaterThan(55_000);
+    await new Promise((r) => setTimeout(r, 400));
+
+    await dropAndReturn(room, clients[1 - turn]!, 1 - turn);
+    const afterOther = gameOf(room);
+    expect(afterOther.version).toBe(start.version);
+    expect(afterOther.timer.remainingMs!).toBeLessThanOrEqual(first - 400);
+
+    const actor = await dropAndReturn(room, clients[turn]!, turn);
+    const afterActor = gameOf(room);
+    expect(afterActor.version).toBe(start.version);
+    expect(afterActor.timer.remainingMs!).toBeLessThanOrEqual(afterOther.timer.remainingMs!);
+
+    // Controle: uma decisão nova (Truco pedido) ganha o prazo inteiro.
+    actor.send(MSG_ACTION, { type: 'truco', version: start.version });
+    await until(() => gameOf(room).version === start.version + 1);
+    expect(gameOf(room).timer.remainingMs!).toBeGreaterThan(afterActor.timer.remainingMs! + 300);
+  });
 });
 
 describe('computador', () => {

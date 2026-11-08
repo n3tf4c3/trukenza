@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
 import { CHARACTERS, CHARACTER_IDS, DEFAULT_RULES, NAME_MAX, normalizeRoomCode, parseName, type RoomRules, type RoomSummary, type SeatCount } from '@trukenza/shared';
 import { createRoom, fetchRooms, invitedCode, joinRoom } from '../net';
+import { useExternalStatus } from '../externalStatus';
 import { useStore } from '../store';
 import { Portrait } from './Portrait';
 import { RulesPicker } from './Regras';
+import { DEFAULT_SCENERY, type SceneryId } from '@trukenza/shared';
+import { SceneryPicker } from './Cenarios';
 
 const ROOM_LIST_MS = 5000;
 const NAME_HINT = `Nome: até ${NAME_MAX} letras ou números; vale espaço, ponto, hífen e sublinhado.`;
@@ -49,8 +52,10 @@ export function Lobby({ initialStatus }: { initialStatus: string }) {
   const [seats, setSeats] = useState<SeatCount>(4);
   const [open, setOpen] = useState(true);
   const [rules, setRules] = useState<RoomRules>(DEFAULT_RULES);
+  const [scenery, setScenery] = useState<SceneryId>(DEFAULT_SCENERY);
   const [code, setCode] = useState(invitedCode ?? '');
-  const [status, setStatus] = useState(initialStatus);
+  // O aviso de saída (queda, inatividade) chega depois da montagem: precisa substituir a mensagem.
+  const [status, setStatus] = useExternalStatus(initialStatus);
   const [busy, setBusy] = useState(false);
   const rooms = useRooms();
 
@@ -109,6 +114,8 @@ export function Lobby({ initialStatus }: { initialStatus: string }) {
       <div className="colunas">
         <section className="cartao">
           <h2>Criar mesa</h2>
+          <h3>Onde vamos jogar?</h3>
+          <SceneryPicker value={scenery} onChange={setScenery} />
           <div className="grupo" role="group" aria-label="Jogadores">
             {([2, 4] as const).map((n) => (
               <button key={n} type="button" aria-pressed={seats === n} onClick={() => setSeats(n)}>
@@ -126,12 +133,12 @@ export function Lobby({ initialStatus }: { initialStatus: string }) {
           </div>
           <p className="dica">{open ? 'Aparece na lista com o código e os nomes.' : 'Só entra quem tiver o código ou o link.'}</p>
           <h2>Regras</h2>
-          <RulesPicker value={rules} onChange={setRules} />
+          <RulesPicker value={rules} onChange={(patch) => setRules((current) => ({ ...current, ...patch }))} />
           <div className="linha">
-            <button type="button" className="principal" disabled={busy} onClick={() => void run(() => createRoom(seats, open, false, rules))}>
+            <button type="button" className="principal" disabled={busy} onClick={() => void run(() => createRoom(seats, open, false, rules, scenery))}>
               Criar mesa
             </button>
-            <button type="button" disabled={busy} onClick={() => void run(() => createRoom(seats, false, true, rules))}>
+            <button type="button" disabled={busy} onClick={() => void run(() => createRoom(seats, false, true, rules, scenery))}>
               Jogar contra o computador
             </button>
           </div>
