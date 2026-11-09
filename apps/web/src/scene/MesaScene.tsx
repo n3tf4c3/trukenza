@@ -1,12 +1,13 @@
 import { Suspense, useMemo, useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Environment, Lightformer, Loader } from '@react-three/drei';
-import { Bloom, EffectComposer, SSAO, ToneMapping, Vignette } from '@react-three/postprocessing';
+import { Bloom, BrightnessContrast, EffectComposer, HueSaturation, N8AO, ToneMapping, Vignette } from '@react-three/postprocessing';
 import { ToneMappingMode } from 'postprocessing';
 import * as THREE from 'three';
 import { PHASE_PLAYING, PHASE_WAITING, SEAT_AWAY, SEAT_FREE, SEAT_TAKEN } from '@trukenza/shared';
 import { selectCard, sit } from '../net';
 import { selectMe, useStore } from '../store';
+import { Atmosfera } from './Atmosfera';
 import { Bolicho, COUNTER_LAMP, FIRE, LAMP } from './Bolicho';
 import { CameraRig } from './CameraRig';
 import { HandHud } from './Cards';
@@ -34,20 +35,21 @@ function FireLight() {
 function Lights({ high }: { high: boolean }) {
   const target = useRef<THREE.Object3D>(new THREE.Object3D());
   // No gráfico baixo: preenchimento simples, sem sombra nem pós-processamento; mantém os rostos legíveis.
+  // No alto a sala fica em penumbra morna e a mesa é a ilha de luz: o lampião manda, o resto contorna.
   return (
     <>
-      <hemisphereLight args={['#e8efff', '#817262', high ? 0.85 : 1.6]} />
-      {!high && <directionalLight position={[1, 4, 3]} intensity={1.1} color="#fff0dc" />}
+      <hemisphereLight args={[high ? '#d6def5' : '#e8efff', high ? '#5c4636' : '#817262', high ? 0.58 : 1.15]} />
+      {!high && <directionalLight position={[1, 4, 3]} intensity={0.85} color="#fff0dc" />}
       <primitive object={target.current} position={[0, 0, 0]} />
       <spotLight
         position={[0, LAMP.y - 0.2, 0]}
         target={target.current}
-        angle={1.1}
-        penumbra={0.9}
-        intensity={9}
-        distance={10}
+        angle={1.12}
+        penumbra={1}
+        intensity={high ? 13 : 12}
+        distance={11}
         decay={1.7}
-        color="#ffe3bc"
+        color={high ? '#ffe7ca' : '#ffe3bc'}
         castShadow={high}
         shadow-mapSize={[2048, 2048]}
         shadow-bias={-0.00015}
@@ -57,11 +59,15 @@ function Lights({ high }: { high: boolean }) {
       <FireLight />
       {high && (
         <>
-          <pointLight position={[0, 2.05, 0]} intensity={4.2} distance={6} decay={2} color="#fff0d9" />
-          <pointLight position={COUNTER_LAMP.toArray()} intensity={2.0} distance={4} decay={2} color="#ffdc9c" />
-          {/* Janela (parede da direita): luz do dia, fria. */}
-          <directionalLight position={[6, 4, 1]} intensity={1.25} color="#cbdfff" />
-          <directionalLight position={[-4, 3, -3]} intensity={0.65} color="#ffe1bd" />
+          {/* Preenchimento dos rostos, logo abaixo do lampião (não projeta a sombra dele nas cartas). */}
+          <pointLight position={[0, 2.05, 0]} intensity={5.2} distance={6.5} decay={2} color="#fff3e2" />
+          <pointLight position={COUNTER_LAMP.toArray()} intensity={2.6} distance={4.5} decay={2} color="#ffd699" />
+          {/* Janela (parede da direita): luz do dia, fria, que recorta quem está de costas para ela. */}
+          <directionalLight position={[6, 3.2, 0.6]} intensity={1.5} color="#c3d9ff" />
+          {/* Porta (esquerda, ao fundo): contraluz fria mais fraca. */}
+          <directionalLight position={[-6, 2.6, -3.2]} intensity={0.75} color="#cfe0ff" />
+          {/* Rebatida morna do piso e da lareira, de baixo e de frente. */}
+          <directionalLight position={[-1.5, 1.2, 5]} intensity={0.5} color="#ffc48f" />
         </>
       )}
     </>
@@ -81,14 +87,20 @@ function Reflections() {
   );
 }
 
-/** Acabamento do gráfico alto: brilho em volta do que emite luz e cantos da tela mais escuros. */
-function Finish() {
+/**
+ * Acabamento do gráfico alto: oclusão de ambiente nos encontros (N8AO, só pela profundidade), brilho em
+ * volta do que emite luz, um leve ganho de cor e contraste, cantos da tela mais escuros e o tom final.
+ * O tom neutro preserva as cores das roupas e das cartas (o ACES as desbotava).
+ */
+function Finish({ indoor }: { indoor: boolean }) {
   return (
-    <EffectComposer multisampling={4} enableNormalPass>
-      <SSAO samples={16} rings={4} radius={0.12} intensity={1.4} luminanceInfluence={0.4} color="#40372f" />
-      <Bloom mipmapBlur luminanceThreshold={1.4} luminanceSmoothing={0.4} intensity={0.22} />
-      <Vignette offset={0.25} darkness={0.22} />
-      <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
+    <EffectComposer multisampling={4}>
+      <N8AO halfRes quality="medium" aoRadius={indoor ? 0.55 : 0.7} distanceFalloff={0.9} intensity={indoor ? 2.4 : 1.8} color={indoor ? '#2b1a10' : '#28303a'} />
+      <Bloom mipmapBlur luminanceThreshold={1.05} luminanceSmoothing={0.35} intensity={indoor ? 0.42 : 0.28} radius={0.72} />
+      <HueSaturation saturation={0.04} />
+      <BrightnessContrast brightness={0} contrast={0.07} />
+      <Vignette offset={0.22} darkness={indoor ? 0.48 : 0.3} />
+      <ToneMapping mode={ToneMappingMode.NEUTRAL} />
     </EffectComposer>
   );
 }
@@ -216,15 +228,15 @@ export function MesaScene() {
       >
         <color attach="background" args={[SKY_COLORS[scenery]]} />
         <fog attach="fog" args={[indoor ? '#2a1a10' : SKY_COLORS[scenery], indoor ? 10 : 28, indoor ? 22 : 90]} />
-        {indoor && <Lights high={high} />}
+        {/* Luz e céu fora do Suspense: enquanto o cenário baixa, os personagens não ficam em silhueta. */}
+        {indoor ? <Lights high={high} /> : <OutdoorLights key={scenery} scenery={scenery} high={high} />}
         <Suspense fallback={null}>
-          {indoor ? <>{high && <Reflections />}<Bolicho /></> :
-            <><OutdoorLights key={scenery} scenery={scenery} high={high} /><Exterior scenery={scenery} /></>}
+          {indoor ? <>{high && <Reflections />}<Bolicho /><Atmosfera high={high} /></> : <Exterior scenery={scenery} />}
         </Suspense>
         <Suspense fallback={null}>
           <Mesa post={high} />
         </Suspense>
-        {high && <Finish />}
+        {high && <Finish indoor={indoor} />}
       </Canvas>
       <Loader containerStyles={{ background: '#1c120c' }} dataInterpolation={(p) => `Arrumando o cenário… ${p.toFixed(0)}%`} />
     </>

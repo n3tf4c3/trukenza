@@ -242,7 +242,7 @@ def box_uv(obj, scale=1.0):
     bm.free()
 
 
-def bake_ao(obj, samples=48, distance=0.9):
+def bake_ao(obj, samples=48, distance=0.9, floor=0.35):
     """Assa a oclusão de ambiente nos vértices e multiplica na cor 'Col' (escurece cantos e encostos)."""
     scene = bpy.context.scene
     scene.render.engine = 'CYCLES'
@@ -261,13 +261,13 @@ def bake_ao(obj, samples=48, distance=0.9):
     scene.render.bake.target = 'VERTEX_COLORS'
     bpy.ops.object.bake(type='AO')
     for c, a in zip(col.data, ao.data):
-        k = 0.35 + 0.65 * a.color[0]  # nunca preto total: o jogo ainda tem luz ambiente
+        k = floor + (1 - floor) * a.color[0]  # nunca preto total: o jogo ainda tem luz ambiente
         c.color = (c.color[0] * k, c.color[1] * k, c.color[2] * k, 1.0)
     me.color_attributes.remove(ao)
     me.color_attributes.active_color = me.color_attributes['Col']
 
 
-def export(path, objects=None):
+def export(path, objects=None, **options):
     if objects is not None:
         bpy.ops.object.select_all(action='DESELECT')
         for o in objects:
@@ -284,4 +284,5 @@ def export(path, objects=None):
         export_materials='EXPORT',
         export_cameras=False,
         export_lights=False,
+        **options,
     )

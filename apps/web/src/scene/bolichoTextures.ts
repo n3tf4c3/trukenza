@@ -51,7 +51,7 @@ function surface(key: string, size: number, meters: number, seed: number, draw: 
 const gray = (v: number) => `rgb(${v | 0},${v | 0},${v | 0})`;
 
 /** Veios de madeira numa faixa (x, y, w, h), no sentido do comprimento (horizontal). */
-function grain(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, rnd: () => number, relief: boolean, dark: string): void {
+function grain(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, rnd: () => number, relief: boolean, dark: string, strength = 1): void {
   g.save();
   g.beginPath();
   g.rect(x, y, w, h);
@@ -63,7 +63,7 @@ function grain(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: 
     const freq = 0.004 + rnd() * 0.01;
     const phase = rnd() * 10;
     g.strokeStyle = relief ? gray(95 + rnd() * 30) : dark;
-    g.globalAlpha = relief ? 0.3 : 0.06 + rnd() * 0.10;
+    g.globalAlpha = relief ? 0.3 : (0.06 + rnd() * 0.10) * strength;
     g.lineWidth = 0.35 + rnd() * 0.9;
     g.beginPath();
     for (let xx = x; xx <= x + w; xx += 6) g.lineTo(xx, yy + Math.sin(xx * freq + phase) * amp);
@@ -97,7 +97,7 @@ export const floorMaps = () =>
         const tone = 0.82 + rnd() * 0.22;
         g.fillStyle = relief ? gray(190 + rnd() * 30) : `rgb(${255 * tone | 0},${242 * tone | 0},${225 * tone | 0})`;
         g.fillRect(x, r * rh, len, rh);
-        grain(g, x, r * rh, len, rh, rnd, relief, '#3b2414');
+        grain(g, x, r * rh, len, rh, rnd, relief, '#3b2414', 1.5);
         // Emenda e pregos.
         g.fillStyle = relief ? gray(40) : 'rgba(40,22,10,0.8)';
         g.fillRect(x, r * rh, 2, rh);
@@ -243,7 +243,8 @@ export function tableTopMaps(): SurfaceMaps {
       const t = 0.93 + rnd() * 0.07;
       g.fillStyle = relief ? gray(200) : `rgb(${255 * t | 0},${240 * t | 0},${222 * t | 0})`;
       g.fillRect(0, i * w, s, w);
-      grain(g, 0, i * w, s, w, rnd, relief, '#4a2a14');
+      grain(g, 0, i * w, s, w, rnd, relief, '#4a2a14', 1.9);
+      grain(g, 0, i * w, s, w, rnd, relief, '#6b3d1c', 1.3);
       g.fillStyle = relief ? gray(110) : 'rgba(60,47,34,0.28)';
       g.fillRect(0, i * w, s, 1.5);
     }

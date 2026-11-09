@@ -1202,3 +1202,164 @@ button.discreto {
 @media (max-width: 640px) {
   .frases-grade { grid-template-columns: 1fr; }
 }
+
+/*
+ * Acabamento da interface (2026-11-09): tipografia do sistema, botões com volume e resposta ao ponteiro,
+ * painéis da partida em vidro escuro morno com filete dourado, placar com números firmes. Só refina o que
+ * existe: as cores de fundo e de texto dos botões continuam as de cima (test/contrast.test.ts).
+ */
+:root {
+  font-family: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Roboto, 'Noto Sans', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  --vidro: linear-gradient(160deg, rgba(38, 30, 24, 0.86), rgba(24, 19, 16, 0.9));
+  --filete: rgba(240, 205, 140, 0.3);
+  --sombra-painel: 0 10px 34px rgba(8, 5, 3, 0.5), inset 0 1px 0 rgba(255, 236, 200, 0.1);
+}
+
+button {
+  border-width: 1.5px;
+  border-radius: 11px;
+  letter-spacing: 0.01em;
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0) 58%);
+  box-shadow: 0 3px 0 var(--tinta), 0 6px 14px rgba(10, 6, 3, 0.22);
+  transition: transform 0.09s ease, box-shadow 0.09s ease, filter 0.12s ease;
+}
+
+@media (hover: hover) {
+  button:hover:not(:disabled) {
+    filter: brightness(1.06);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 0 var(--tinta), 0 9px 18px rgba(10, 6, 3, 0.28);
+  }
+}
+
+button:active:not(:disabled) {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 var(--tinta), 0 2px 6px rgba(10, 6, 3, 0.2);
+}
+
+button:disabled {
+  background-image: none;
+  box-shadow: 0 2px 0 var(--tinta);
+}
+
+button.principal {
+  background-image: linear-gradient(180deg, rgba(255, 190, 150, 0.3), rgba(60, 0, 0, 0.12));
+  text-shadow: 0 1px 0 rgba(60, 10, 6, 0.45);
+}
+
+button.principal[aria-pressed='true'] {
+  text-shadow: none;
+}
+
+.lobby h1 {
+  letter-spacing: 0.02em;
+  background: linear-gradient(180deg, #ffd88a 10%, #e8a23c 70%, #b9722a);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  /* A sombra de texto apareceria através do preenchimento transparente: a sombra vem do filtro. */
+  text-shadow: none;
+  filter: drop-shadow(0 3px 0 rgba(30, 14, 6, 0.7)) drop-shadow(0 10px 24px rgba(255, 170, 70, 0.25));
+}
+
+.cartao {
+  box-shadow: 0 5px 0 var(--tinta), 0 18px 40px rgba(10, 5, 2, 0.4);
+}
+
+.personagens button,
+.cenario-opcao {
+  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+}
+
+.barra,
+.acoes {
+  background: var(--vidro);
+  border: 1px solid var(--filete);
+  box-shadow: var(--sombra-painel);
+  backdrop-filter: blur(14px) saturate(1.25);
+  -webkit-backdrop-filter: blur(14px) saturate(1.25);
+}
+
+.barra .marca {
+  letter-spacing: 0.03em;
+  text-shadow: 0 1px 0 rgba(30, 14, 6, 0.8), 0 0 18px rgba(255, 180, 80, 0.3);
+}
+
+.opcoes-painel,
+.sinais-painel,
+.musica-painel {
+  background: linear-gradient(160deg, #2f241c, #211914);
+  border-color: var(--filete);
+  box-shadow: 0 18px 50px rgba(6, 4, 2, 0.65), inset 0 1px 0 rgba(255, 236, 200, 0.08);
+}
+
+.placar .lado {
+  background: var(--vidro);
+  border-width: 1.5px;
+  border-radius: 13px;
+  box-shadow: var(--sombra-painel);
+  backdrop-filter: blur(10px) saturate(1.2);
+  -webkit-backdrop-filter: blur(10px) saturate(1.2);
+}
+
+.placar .lado.meu {
+  box-shadow: 0 0 0 2px rgba(255, 247, 230, 0.55), var(--sombra-painel);
+}
+
+.placar strong {
+  font-size: 1.85rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+}
+
+.placar .meta {
+  background: var(--vidro);
+  border: 1px solid rgba(240, 205, 140, 0.16);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.na-mesa {
+  border: 1px solid var(--filete);
+  box-shadow: var(--sombra-painel);
+  backdrop-filter: blur(10px) saturate(1.2);
+  -webkit-backdrop-filter: blur(10px) saturate(1.2);
+}
+
+.na-mesa img {
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
+}
+
+.jogadores {
+  box-shadow: 0 10px 30px rgba(8, 5, 3, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+.etiqueta {
+  box-shadow: 0 4px 14px rgba(12, 8, 5, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.relogio {
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.grito {
+  filter: drop-shadow(0 8px 20px rgba(10, 5, 2, 0.55));
+}
+
+/* Rolagem discreta nos painéis escuros. */
+.opcoes-painel,
+.sinais-painel,
+.acoes,
+.jogadores {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(240, 205, 140, 0.45) transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button {
+    transition: none;
+  }
+}

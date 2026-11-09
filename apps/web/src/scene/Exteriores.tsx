@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { dress } from './Bolicho';
 import { mistTexture, outdoorTexture, waterTexture } from './outdoorTextures';
 import { Petalas } from './Petalas';
+import { Ceu, type SkyLook } from './Ceu';
 
 function Mist() {
   const group = useRef<THREE.Group>(null);
@@ -24,7 +25,8 @@ function Mist() {
     </sprite>)}</group>;
 }
 
-export const SCENERY_URL = '/modelos/cenarios.glb?v=5';
+/** Um arquivo por destino (cenário, água e mesa): só o escolhido é baixado. */
+export const sceneryUrl = (scenery: OutdoorId) => `/modelos/cenarios/${scenery}.glb?v=7`;
 export type OutdoorId = Exclude<SceneryId, 'bolicho'>;
 export const SKY_COLORS = {
   bolicho: '#1c120c', praia: '#a2d8ed', parque: '#ecd4b2', vegas: '#131c3b',
@@ -32,9 +34,22 @@ export const SKY_COLORS = {
   fuji: '#b2d9e9', cataratas: '#b5d8ce',
 } as const;
 
+/** Alto do céu e tinta das nuvens de cada destino; o horizonte é a cor de `SKY_COLORS` (a mesma da névoa). */
+const SKY_LOOKS: Record<OutdoorId, SkyLook> = {
+  praia: { top: '#3f9fd8', cloud: '#ffffff' },
+  parque: { top: '#86a9d2', cloud: '#ffe9d2' },
+  vegas: { top: '#050817', cloud: '#ffffff', night: true },
+  paris: { top: '#93a9d0', cloud: '#fff0e4' },
+  china: { top: '#6ea4cc', cloud: '#ffffff' },
+  japao: { top: '#9fb3de', cloud: '#fff4f8' },
+  muralha: { top: '#6d9cc6', cloud: '#ffffff' },
+  fuji: { top: '#4f97d3', cloud: '#ffffff' },
+  cataratas: { top: '#5f9fc4', cloud: '#f4fffb' },
+};
+
 /** Modelos próprios, separados do elenco para a troca nunca remontar jogadores. */
 export function Exterior({ scenery }: { scenery: OutdoorId }) {
-  const gltf = useGLTF(SCENERY_URL, '/draco/');
+  const gltf = useGLTF(sceneryUrl(scenery), '/draco/');
   const parts = useMemo(() => {
     const scene = gltf.nodes[scenery]!.clone();
     const table = gltf.nodes.mesa_externa!.clone();
@@ -121,7 +136,9 @@ export function Exterior({ scenery }: { scenery: OutdoorId }) {
 export function OutdoorLights({ scenery, high }: { scenery: OutdoorId; high: boolean }) {
   const night = scenery === 'vegas';
   const park = scenery === 'parque' || scenery === 'paris';
+  const sun: [number, number, number] = park ? [-7, 8, 4] : [5, 10, 6];
   return <>
+    <Ceu look={SKY_LOOKS[scenery]} horizon={SKY_COLORS[scenery]} sun={sun} />
     <hemisphereLight args={[night ? '#b9c9ff' : '#e8f4ff', night ? '#6c467c' : '#c3a47c', night ? 1.1 : high ? 0.7 : 0.95]} />
     <directionalLight position={park ? [-7, 8, 4] : [5, 10, 6]} intensity={night ? 1.4 : 1.6}
       color={night ? '#d5ddff' : park ? '#ffe0b2' : '#fff0d5'} castShadow={high}

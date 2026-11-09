@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useGLTF } from '@react-three/drei';
 import type * as THREE from 'three';
 import type { CharacterId } from '@trukenza/shared';
+import { finishCharacter } from './acabamento';
 
 /**
  * Peças articuladas dos personagens, modeladas no Blender (`assets/blender/personagens.py`) e exportadas
@@ -40,6 +41,8 @@ export function useCharacterParts(character: CharacterId): CharacterParts {
       const src = gltf.scene.getObjectByName(`${character}_${part}`);
       if (!src) throw new Error(`peça ausente no modelo: ${character}_${part}`);
       const copy = src.clone();
+      // Os materiais são compartilhados pelos clones: o acabamento entra uma vez em cada.
+      finishCharacter(copy);
       copy.traverse((o) => {
         const mesh = o as THREE.Mesh;
         if (mesh.isMesh) {

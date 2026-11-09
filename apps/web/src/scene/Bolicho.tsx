@@ -6,6 +6,7 @@ import { PHRASES } from '@trukenza/shared';
 import { useStore } from '../store';
 import { CHAIR_RADIUS, polar, seatAngle } from './layout';
 import { barkeepPose, barkeepYaw, dogPose, dogYaw } from './figurantes';
+import { addRim, finishSurface } from './acabamento';
 import {
   brickMaps,
   burlapMaps,
@@ -33,6 +34,9 @@ const DRACO = '/draco/';
 export const LAMP = new THREE.Vector3(0, 2.5, 0);
 export const COUNTER_LAMP = new THREE.Vector3(-1.6, 1.25, -4.55);
 export const FIRE = new THREE.Vector3(0, 0.55, 5.3);
+
+/** Bolicheiro e cachorro ganham a mesma contraluz dos personagens da mesa. */
+const FIGURE_SKIN = new Set(['pelo_caramelo', 'pelo_claro', 'pele', 'camisa', 'avental', 'lenco', 'chapeu', 'bombacha']);
 
 const SURFACES: Record<string, { maps: () => SurfaceMaps; bump: number }> = {
   piso: { maps: floorMaps, bump: 0.018 },
@@ -77,10 +81,9 @@ export function dress(root: THREE.Object3D, shadows: { cast: boolean; receive: b
         mat.emissiveIntensity = 1.25;
         mat.needsUpdate = true;
       }
-      if (mat.name.startsWith('vidro')) {
-        // Garrafas: brilho de vidro com reflexo do ambiente.
-        mat.envMapIntensity = 1.6;
-      }
+      // Brilho de verniz, vidro, metal e louça, com reflexo do ambiente.
+      finishSurface(mat);
+      if (FIGURE_SKIN.has(mat.name)) addRim(mat, '#ffe6c4', 0.3);
     }
   });
 }
