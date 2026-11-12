@@ -1,8 +1,11 @@
 # Imagens do Trukenza: `server` (mesas) e `client` (página estática).
 # Multi-arquitetura (linux/amd64 e linux/arm64, para o Orange Pi); ver docs/docker.md.
 
-# Patch exato: 24.22.1 corrige a CVE-2026-111497 (Brotli do node:zlib); não descer abaixo dele.
-ARG NODE_IMAGE=node:24.22.1-alpine
+# Patch exato, não descer abaixo dele: 24.22.3 traz as correções de segurança de novembro de 2026
+# (https://nodejs.org/en/blog/vulnerability/november-2026-security-releases); a 24.22.1 já corrigia
+# a CVE-2026-111497 (Brotli do node:zlib). Tag com digest (índice multiarquitetura, amd64 e arm64):
+# a imagem não muda se a tag for republicada. Ao trocar a versão, troque os dois.
+ARG NODE_IMAGE=node:24.22.3-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5
 ARG PNPM_VERSION=12.4.2
 
 # Manifestos do workspace: o lockfile só confere com todos os pacotes presentes.
