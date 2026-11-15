@@ -763,7 +763,7 @@ if '--previa' in argv:
     target = P(0, 1.1, 0)
     # O render do Blender só mostra a cor por vértice se o material a ler (o glTF a exporta de qualquer jeito).
     for m in bpy.data.materials:
-        if not m.use_nodes:
+        if m.node_tree is None:
             continue
         nt = m.node_tree
         bsdf = nt.nodes['Principled BSDF']
