@@ -49,8 +49,9 @@ def mat(name, color='#ffffff', rough=0.7, metal=0.0, emit=None, strength=0.0):
     if name in _MATS:
         return _MATS[name]
     m = bpy.data.materials.new(name)
-    m.use_nodes = True
-    b = m.node_tree.nodes['Principled BSDF']
+    if bpy.app.version < (5, 0, 0):
+        m.use_nodes = True  # do 5.0 em diante todo material já nasce com nós
+    b =m.node_tree.nodes['Principled BSDF']
     b.inputs['Base Color'].default_value = srgb(color)
     b.inputs['Roughness'].default_value = rough
     b.inputs['Metallic'].default_value = metal

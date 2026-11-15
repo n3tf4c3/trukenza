@@ -43,10 +43,10 @@ Arquitetura, o que veio do Riscote e o funcionamento do servidor: `docs/arquitet
 - `pnpm typecheck`
 - `pnpm test`
 - `docker compose up -d --build`: servidor e cliente em containers (cliente em http://localhost:4180). Detalhes em `docs/docker.md`.
-- Modelos 3D (Blender 4.5, em segundo plano, a partir da raiz; acrescente `-- --previa arquivo.png` para um render de conferência; no bolicho, `--camera x,y,z,alvo_x,alvo_y,alvo_z` aponta a câmera da prévia, em coordenadas do jogo):
-  - `& "C:\Program Files\Blender Foundation\Blender 4.5\blender.exe" -b --factory-startup -P assets/blender/bolicho.py`
-  - `& "C:\Program Files\Blender Foundation\Blender 4.5\blender.exe" -b --factory-startup -P assets/blender/personagens.py`
-  - `& "C:\Program Files\Blender Foundation\Blender 4.5\blender.exe" -b --factory-startup -P assets/blender/cenarios.py`
+- Modelos 3D (Blender 5.3; os scripts ainda rodam no 4.5, em segundo plano, a partir da raiz; acrescente `-- --previa arquivo.png` para um render de conferência; no bolicho, `--camera x,y,z,alvo_x,alvo_y,alvo_z` aponta a câmera da prévia, em coordenadas do jogo):
+  - `& "C:\Program Files\Blender Foundation\Blender 5.3\blender.exe" -b --factory-startup -P assets/blender/bolicho.py`
+  - `& "C:\Program Files\Blender Foundation\Blender 5.3\blender.exe" -b --factory-startup -P assets/blender/personagens.py`
+  - `& "C:\Program Files\Blender Foundation\Blender 5.3\blender.exe" -b --factory-startup -P assets/blender/cenarios.py`
   - Os `.glb` gerados vão para o Git: o build do cliente não roda o Blender.
   - No render de personagens, `-- --previa arquivo.png --personagens luistesoura,sardinha` mostra só os escolhidos; o `.glb` exportado continua contendo todo o elenco.
 
